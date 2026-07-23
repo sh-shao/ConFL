@@ -1,0 +1,78 @@
+Static class initialization deadlock with commons-logging
+There are some deadlock in JVM when initializing classes that depends on a subclass of that class (see: https://bugs.openjdk.java.net/browse/JDK-8037567). 
+
+This can happen in Pulsar client when there are multiple threads that jump into the path of initializing classes from Apache commons-logging library. 
+
+In most of the cases, applications are using `jcl-over-slf4j` to route log requests for `commons-logging` into SLF4j, but `jcl-over-slf4j` has the above described problem of deadlocking. 
+
+The effect of this issue is to have all Pulsar threads stuck in class initialization. eg:
+
+```
+"pulsar-client-io-2-1" #2736 prio=5 os_prio=0 tid=0x00007fa2b402e000 nid=0x167f in Object.wait() [0x00007fa73f5f8000]
+   java.lang.Thread.State: RUNNABLE
+	at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+	at sun.reflect.NativeConstructorAccessorImpl.newInstance(NativeConstructorAccessorImpl.java:62)
+	at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(DelegatingConstructorAccessorImpl.java:45)
+	at java.lang.reflect.Constructor.newInstance(Constructor.java:423)
+	at java.lang.Class.newInstance(Class.java:442)
+	at org.apache.pulsar.shade.org.apache.commons.logging.LogFactory.createFactory(LogFactory.java:1160)
+	at org.apache.pulsar.shade.org.apache.commons.logging.LogFactory$2.run(LogFactory.java:1065)
+	at java.security.AccessController.doPrivileged(Native Method)
+	at org.apache.pulsar.shade.org.apache.commons.logging.LogFactory.newFactory(LogFactory.java:1062)
+	at org.apache.pulsar.shade.org.apache.commons.logging.LogFactory.getFactory(LogFactory.java:569)
+	at org.apache.pulsar.shade.org.apache.commons.logging.LogFactory.getLog(LogFactory.java:685)
+	at org.apache.pulsar.shade.org.apache.http.conn.ssl.DefaultHostnameVerifier.<init>(DefaultHostnameVerifier.java:82)
+	at org.apache.pulsar.shade.org.apache.http.conn.ssl.DefaultHostnameVerifier.<init>(DefaultHostnameVerifier.java:91)
+	at org.apache.pulsar.client.impl.ClientCnx.<clinit>(ClientCnx.java:137)
+	at org.apache.pulsar.client.impl.ConnectionPool.lambda$new$0(ConnectionPool.java:63)
+	at org.apache.pulsar.client.impl.ConnectionPool$$Lambda$2201/1228760440.get(Unknown Source)
+	at org.apache.pulsar.client.impl.PulsarChannelInitializer.initChannel(PulsarChannelInitializer.java:90)
+	at org.apache.pulsar.client.impl.PulsarChannelInitializer.initChannel(PulsarChannelInitializer.java:37)
+	at org.apache.pulsar.shade.io.netty.channel.ChannelInitializer.initChannel(ChannelInitializer.java:115)
+
+"pulsar-client-io-12-1" #2742 prio=5 os_prio=0 tid=0x00007fa29c035800 nid=0x1687 in Object.wait() [0x00007fa7382dc000]
+   java.lang.Thread.State: RUNNABLE
+	at org.apache.pulsar.client.impl.ConnectionPool.lambda$new$0(ConnectionPool.java:63)
+	at org.apache.pulsar.client.impl.ConnectionPool$$Lambda$2201/1228760440.get(Unknown Source)
+	at org.apache.pulsar.client.impl.PulsarChannelInitializer.initChannel(PulsarChannelInitializer.java:90)
+	at org.apache.pulsar.client.impl.PulsarChannelInitializer.initChannel(PulsarChannelInitializer.java:37)
+	at org.apache.pulsar.shade.io.netty.channel.ChannelInitializer.initChannel(ChannelInitializer.java:115)
+	at org.apache.pulsar.shade.io.netty.channel.ChannelInitializer.handlerAdded(ChannelInitializer.java:107)
+	at org.apache.pulsar.shade.io.netty.channel.DefaultChannelPipeline.callHandlerAdded0(DefaultChannelPipeline.java:637)
+	at org.apache.pulsar.shade.io.netty.channel.DefaultChannelPipeline.access$000(DefaultChannelPipeline.java:46)
+	at org.apache.pulsar.shade.io.netty.channel.DefaultChannelPipeline$PendingHandlerAddedTask.execute(DefaultChannelPipeline.java:1487)
+	at org.apache.pulsar.shade.io.netty.channel.DefaultChannelPipeline.callHandlerAddedForAllHandlers(DefaultChannelPipeline.java:1161)
+	at org.apache.pulsar.shade.io.netty.channel.DefaultChannelPipeline.invokeHandlerAddedIfNeeded(DefaultChannelPipeline.java:686)
+	at org.apache.pulsar.shade.io.netty.channel.AbstractChannel$AbstractUnsafe.register0(AbstractChannel.java:514)
+	at org.apache.pulsar.shade.io.netty.channel.AbstractChannel$AbstractUnsafe.register(AbstractChannel.java:480)
+	at org.apache.pulsar.shade.io.netty.channel.SingleThreadEventLoop.register(SingleThreadEventLoop.java:80)
+	at org.apache.pulsar.shade.io.netty.channel.SingleThreadEventLoop.register(SingleThreadEventLoop.java:74)
+	at org.apache.pulsar.shade.io.netty.channel.MultithreadEventLoopGroup.register(MultithreadEventLoopGroup.java:86)
+	at org.apache.pulsar.shade.io.netty.bootstrap.AbstractBootstrap.initAndRegister(AbstractBootstrap.java:333)
+	at org.apache.pulsar.shade.io.netty.bootstrap.Bootstrap.doResolveAndConnect(Bootstrap.java:163)
+	at org.apache.pulsar.shade.io.netty.bootstrap.Bootstrap.connect(Bootstrap.java:145)
+	at org.apache.pulsar.shade.io.netty.bootstrap.Bootstrap.connect(Bootstrap.java:133)
+	at org.apache.pulsar.client.impl.ConnectionPool.connectToAddress(ConnectionPool.java:272)
+	at org.apache.pulsar.client.impl.ConnectionPool.connectToResolvedAddresses(ConnectionPool.java:230)
+	at org.apache.pulsar.client.impl.ConnectionPool.lambda$createConnection$11(ConnectionPool.java:220)
+	at org.apache.pulsar.client.impl.ConnectionPool$$Lambda$2255/1319362012.apply(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniCompose(CompletableFuture.java:966)
+	at java.util.concurrent.CompletableFuture$UniCompose.tryFire(CompletableFuture.java:940)
+	at java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:488)
+	at java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:1975)
+	at org.apache.pulsar.client.impl.ConnectionPool.lambda$resolveName$16(ConnectionPool.java:258)
+	at org.apache.pulsar.client.impl.ConnectionPool$$Lambda$2251/1197340901.operationComplete(Unknown Source)
+....
+
+```
+
+
+Pulsar client is pulling in `commons-loggging` in 3 different ways. 
+
+ 1. `bookkeeper-common-allocator` -> `commons-configuration` -> `commons-logging` 
+     The dependency on `commons-configuration` is useless and it's only being pulled because it's defined as a blanket dependency in BK top level pom. We should exclude it for now in Pulsar and fix the dependency in BK.
+
+ 2. Pulsar client has a dependency on Apache HTTP client. This is only used for hostname validation when using TLS. Given that we only use a tiny part of that library, to avoid all the transitive dependencies we should just include the hostname validation code. 
+
+ 3. OAuth2 authentication support in Pulsar client, recently added, also started using Apache HTTP client to make HTTP request. In this case we should change that code to use AsyncHttpClient, which is the library that we're using everywhere else to make HTTP calls. 
+

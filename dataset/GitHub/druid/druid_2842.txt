@@ -1,0 +1,30 @@
+NPE in RTR with multiple threads for task assignment
+Multiple threads in task assignment causes NPE. 
+Seems to have been introduced by https://github.com/druid-io/druid/pull/2521
+
+```
+2016-04-15T09:56:11,335 ERROR [rtr-pending-tasks-runner-2] io.druid.indexing.overlord.RemoteTaskRunner - Exception while trying to assign task: {class=io.druid.indexing.overlord.RemoteTask
+Runner, exceptionType=class java.lang.NullPointerException, exceptionMessage=task, taskId=<TASKID>}
+java.lang.NullPointerException: task
+        at com.google.common.base.Preconditions.checkNotNull(Preconditions.java:229) ~[druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner.tryAssignTask(RemoteTaskRunner.java:638) ~[druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner.access$1400(RemoteTaskRunner.java:116) ~[druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner$3.call(RemoteTaskRunner.java:568) [druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner$3.call(RemoteTaskRunner.java:556) [druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at java.util.concurrent.FutureTask.run(FutureTask.java:266) [?:1.8.0_60]
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142) [?:1.8.0_60]
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617) [?:1.8.0_60]
+        at java.lang.Thread.run(Thread.java:745) [?:1.8.0_60]
+2016-04-15T09:56:11,336 ERROR [rtr-pending-tasks-runner-2] io.druid.indexing.overlord.RemoteTaskRunner - Exception in running pending tasks: {class=io.druid.indexing.overlord.RemoteTaskRun
+ner, exceptionType=class java.lang.NullPointerException, exceptionMessage=taskRunnerWorkItem}
+java.lang.NullPointerException: taskRunnerWorkItem
+        at com.google.common.base.Preconditions.checkNotNull(Preconditions.java:229) ~[druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner.taskComplete(RemoteTaskRunner.java:1048) ~[druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner.access$1500(RemoteTaskRunner.java:116) ~[druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner$3.call(RemoteTaskRunner.java:577) [druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at io.druid.indexing.overlord.RemoteTaskRunner$3.call(RemoteTaskRunner.java:556) [druid-selfcontained-7aaf2b3.jar:7aaf2b3]
+        at java.util.concurrent.FutureTask.run(FutureTask.java:266) [?:1.8.0_60]
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142) [?:1.8.0_60]
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617) [?:1.8.0_60]
+        at java.lang.Thread.run(Thread.java:745) [?:1.8.0_60]
+```

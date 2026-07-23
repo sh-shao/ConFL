@@ -1,0 +1,87 @@
+[Bug] Deadlock while reading Schema from BookKeeper
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+2.10.2rc
+
+### Minimal reproduce step
+
+There is a combination of facts in which you can end up in a stuck broker with the main ZK client thread stuck like this:
+
+```
+"main-EventThread" #18 daemon prio=5 os_prio=0 cpu=858.10ms elapsed=2757.17s tid=0x00007f32461ad800 nid=0x1f6db1 waiting on condition  [0x00007f3213fb8000]
+   java.lang.Thread.State: WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@11.0.15.0.1/Native Method)
+	- parking to wait for  <0x00000007f28a3860> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.park(java.base@11.0.15.0.1/LockSupport.java:194)
+	at java.util.concurrent.CompletableFuture$Signaller.block(java.base@11.0.15.0.1/CompletableFuture.java:1796)
+	at java.util.concurrent.ForkJoinPool.managedBlock(java.base@11.0.15.0.1/ForkJoinPool.java:3128)
+	at java.util.concurrent.CompletableFuture.waitingGet(java.base@11.0.15.0.1/CompletableFuture.java:1823)
+	at java.util.concurrent.CompletableFuture.get(java.base@11.0.15.0.1/CompletableFuture.java:1998)
+	at org.apache.bookkeeper.common.concurrent.FutureUtils.result(FutureUtils.java:72)
+	at org.apache.bookkeeper.common.concurrent.FutureUtils.result(FutureUtils.java:61)
+	at org.apache.bookkeeper.client.DefaultBookieAddressResolver.resolve(DefaultBookieAddressResolver.java:43)
+	at org.apache.bookkeeper.proto.PerChannelBookieClient.connect(PerChannelBookieClient.java:532)
+	at org.apache.bookkeeper.proto.PerChannelBookieClient.connectIfNeededAndDoOp(PerChannelBookieClient.java:658)
+	at org.apache.bookkeeper.proto.DefaultPerChannelBookieClientPool.initialize(DefaultPerChannelBookieClientPool.java:92)
+	at org.apache.bookkeeper.proto.BookieClientImpl.lookupClient(BookieClientImpl.java:217)
+	at org.apache.bookkeeper.proto.BookieClientImpl.isWritable(BookieClientImpl.java:170)
+	at org.apache.bookkeeper.client.LedgerHandle.isWriteSetWritable(LedgerHandle.java:1227)
+	at org.apache.bookkeeper.client.LedgerHandle.waitForWritable(LedgerHandle.java:1249)
+	at org.apache.bookkeeper.client.LedgerHandle.readEntriesInternalAsync(LedgerHandle.java:883)
+	at org.apache.bookkeeper.client.LedgerHandle.asyncReadEntriesInternal(LedgerHandle.java:800)
+	at org.apache.bookkeeper.client.LedgerHandle.asyncReadEntries(LedgerHandle.java:694)
+	at org.apache.pulsar.broker.service.schema.BookkeeperSchemaStorage$Functions.getLedgerEntry(BookkeeperSchemaStorage.java:646)
+	at org.apache.pulsar.broker.service.schema.BookkeeperSchemaStorage.lambda$readSchemaEntry$33(BookkeeperSchemaStorage.java:524)
+	at org.apache.pulsar.broker.service.schema.BookkeeperSchemaStorage$$Lambda$820/0x00000008007e5840.apply(Unknown Source)
+	at java.util.concurrent.CompletableFuture$UniCompose.tryFire(java.base@11.0.15.0.1/CompletableFuture.java:1072)
+	at java.util.concurrent.CompletableFuture.postComplete(java.base@11.0.15.0.1/CompletableFuture.java:506)
+	at java.util.concurrent.CompletableFuture.complete(java.base@11.0.15.0.1/CompletableFuture.java:2073)
+	at org.apache.pulsar.broker.service.schema.BookkeeperSchemaStorage.lambda$openLedger$40(BookkeeperSchemaStorage.java:601)
+	at org.apache.pulsar.broker.service.schema.BookkeeperSchemaStorage$$Lambda$819/0x00000008007e5440.openComplete(Unknown Source)
+	at org.apache.bookkeeper.client.LedgerOpenOp.openComplete(LedgerOpenOp.java:248)
+	at org.apache.bookkeeper.client.LedgerOpenOp.openWithMetadata(LedgerOpenOp.java:201)
+	at org.apache.bookkeeper.client.LedgerOpenOp.lambda$initiate$0(LedgerOpenOp.java:119)
+	at org.apache.bookkeeper.client.LedgerOpenOp$$Lambda$621/0x0000000800715040.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniWhenComplete(java.base@11.0.15.0.1/CompletableFuture.java:859)
+	at java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(java.base@11.0.15.0.1/CompletableFuture.java:837)
+	at java.util.concurrent.CompletableFuture.postComplete(java.base@11.0.15.0.1/CompletableFuture.java:506)
+	at java.util.concurrent.CompletableFuture.complete(java.base@11.0.15.0.1/CompletableFuture.java:2073)
+	at org.apache.pulsar.metadata.bookkeeper.PulsarLedgerManager.lambda$readLedgerMetadata$2(PulsarLedgerManager.java:215)
+	at org.apache.pulsar.metadata.bookkeeper.PulsarLedgerManager$$Lambda$615/0x0000000800717c40.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture$UniAccept.tryFire(java.base@11.0.15.0.1/CompletableFuture.java:714)
+	at java.util.concurrent.CompletableFuture.postComplete(java.base@11.0.15.0.1/CompletableFuture.java:506)
+	at java.util.concurrent.CompletableFuture.complete(java.base@11.0.15.0.1/CompletableFuture.java:2073)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore.handleGetResult(ZKMetadataStore.java:244)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore.lambda$batchOperation$6(ZKMetadataStore.java:188)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore$$Lambda$164/0x000000080033b840.processResult(Unknown Source)
+	at org.apache.pulsar.metadata.impl.PulsarZooKeeperClient$3$1.processResult(PulsarZooKeeperClient.java:490)
+	at org.apache.zookeeper.ClientCnxn$EventThread.processEvent(ClientCnxn.java:712)
+	at org.apache.zookeeper.ClientCnxn$EventThread.run(ClientCnxn.java:553)
+```
+
+### What did you expect to see?
+
+the broker works
+
+### What did you see instead?
+
+the broker is stuck
+
+### Anything else?
+
+It is a consequence of https://github.com/apache/pulsar/pull/17762
+
+The main problem here is that with PulsarRegistrationClient even if we use the MetadataCache there is still a chance that we load the value with a blocking call to ZK.
+[https://github.com/datastax/pulsar/blob/3738257bd5be07f317aa68c2217aececf28c1761/p[…]apache/pulsar/metadata/bookkeeper/PulsarRegistrationClient.java](https://github.com/datastax/pulsar/blob/3738257bd5be07f317aa68c2217aececf28c1761/pulsar-metadata/src/main/java/org/apache/pulsar/metadata/bookkeeper/PulsarRegistrationClient.java#L169)
+
+in BookKeeper Zk Registration Driver we never perform reads in that method
+[https://github.com/datastax/bookkeeper/blob/034ef8566ad037937a4d58a28f70631175744f[…]n/java/org/apache/bookkeeper/discover/ZKRegistrationClient.java](https://github.com/datastax/bookkeeper/blob/034ef8566ad037937a4d58a28f70631175744f53/bookkeeper-server/src/main/java/org/apache/bookkeeper/discover/ZKRegistrationClient.java#L243)
+
+### Are you willing to submit a PR?
+
+- [X] I'm willing to submit a PR!

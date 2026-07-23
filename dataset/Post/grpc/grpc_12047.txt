@@ -1,0 +1,9 @@
+Clarify thread safety of BinderTransport and its TransactionHandler implementation
+In [PR #11981](https://github.com/grpc/grpc-java/pull/11981), a potential data race on the `acknowledgedIncomingBytes` field in `BinderTransport` was identified. However, it was noted that all incoming Binder transactions are FLAG_ONEWAY, ensuring that only one thread from the Binder thread pool invokes `handleTransaction()` at a time.​
+
+Despite this, the `BinderTransport` class is annotated with @ThreadSafe, which may be misleading since it implements `TransactionHandler` directly. To address this, `BinderTransport` shall delegate `TransactionHandler` to a private inner class not marked as @ThreadSafe. This change would clarify the thread safety guarantees and prevent potential misunderstandings.​
+
+Action Items:
+- Refactor `BinderTransport` to delegate `TransactionHandler` to a private inner class.
+- Update documentation and annotations to accurately reflect thread safety guarantees.
+- Ensure that the refactoring maintains existing functionality and passes all tests.​

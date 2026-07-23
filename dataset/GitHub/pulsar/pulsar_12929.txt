@@ -1,0 +1,42 @@
+Deadlock in internalDeleteSubscription  in metadata-store callback thread
+**Describe the bug**
+When doing certain topic operations (for e.g., delete-subscription), it can result in a deadlock metadata-store callback thread. Please see the stack trace below.
+
+"metadata-store-6-1" #43 prio=5 os_prio=0 cpu=380.47ms elapsed=797.76s tid=0x00007f6ffc026800 nid=0x74 waiting on condition  [0x00007f7001ce1000]
+   java.lang.Thread.State: WAITING (parking)
+        at jdk.internal.misc.Unsafe.park(java.base@11.0.12/Native Method)
+        - parking to wait for  <0x00000000ffe95e98> (a java.util.concurrent.CompletableFuture$Signaller)
+        at java.util.concurrent.locks.LockSupport.park(java.base@11.0.12/LockSupport.java:194)
+        at java.util.concurrent.CompletableFuture$Signaller.block(java.base@11.0.12/CompletableFuture.java:1796)
+        at java.util.concurrent.ForkJoinPool.managedBlock(java.base@11.0.12/ForkJoinPool.java:3128)
+        at java.util.concurrent.CompletableFuture.waitingGet(java.base@11.0.12/CompletableFuture.java:1823)
+        at java.util.concurrent.CompletableFuture.get(java.base@11.0.12/CompletableFuture.java:1998)
+        at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.internalDeleteSubscriptionForNonPartitionedTopic(PersistentTopicsBase.java:1454)
+        at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.lambda$internalDeleteSubscription$69(PersistentTopicsBase.java:1431)
+        at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase$$Lambda$1126/0x000000084080a840.accept(Unknown Source)
+        at java.util.concurrent.CompletableFuture$UniAccept.tryFire(java.base@11.0.12/CompletableFuture.java:714)
+        at java.util.concurrent.CompletableFuture.postComplete(java.base@11.0.12/CompletableFuture.java:506)
+        at java.util.concurrent.CompletableFuture.complete(java.base@11.0.12/CompletableFuture.java:2073)
+        at org.apache.pulsar.metadata.impl.ZKMetadataStore.lambda$null$7(ZKMetadataStore.java:158)
+        at org.apache.pulsar.metadata.impl.ZKMetadataStore$$Lambda$220/0x000000084033bc40.run(Unknown Source)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@11.0.12/ThreadPoolExecutor.java:1128)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@11.0.12/ThreadPoolExecutor.java:628)
+        at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+        at java.lang.Thread.run(java.base@11.0.12/Thread.java:829)
+
+The issue is similar to:  https://github.com/apache/pulsar/issues/12726
+
+**To Reproduce**
+This is a race condition, I have not been able to come up with a reliable way to reproduce this. But it is easily reproducible inin a 3-node broker setup, creating and deleting topic consumers.
+
+**Expected behavior**
+The metadata-store callback thread should not deadlock.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+
+**Additional context**
+Add any other context about the problem here.

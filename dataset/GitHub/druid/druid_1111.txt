@@ -1,0 +1,50 @@
+Realtime query timeouts when druid.processing.numThreads set to 1
+I was following the cluster tutorial and found the queries (timeseries in my case) time out on the realtime node, but not the historical node. I can easily reproduce by only firing up the realtime node with the configs from the *-bin.tar.gz, which have druid.processing.numThreads=1. It starts up and begins indexing, but when I send it a query, it times out. 
+
+Digging in a bit more, it appears that the QueryResource will submit a task to the ExecutionService, but then that Task also expects to be able to submit more tasks and wait for the results, but we only have 1 thread in the pool, so it waits until timeout.
+
+Repro Steps:
+Setup mysql and zookeeper as per the tutorial.
+Grab latest master branch 8410023b6e18dbb01956760be772018be333b2f9. 
+Build with ./build.sh
+cd into services/target
+tar -zxf druid-services-0.7.0-SNAPSHOT-bin.tar.gz
+cd druid-services-0.7.0-SNAPSHOT
+
+Fire up the realtime node. I realize the other bits are not running :) In my initial test, I had all setup and running as per the tutorial. But only the realtime node is necessary to repro.
+
+```
+java -Xmx256m -Duser.timezone=UTC -Dfile.encoding=UTF-8 -Ddruid.realtime.specFile=examples/wikipedia/wikipedia_realtime.spec -classpath lib/*:config/realtime io.druid.cli.Main server realtime
+```
+
+In another shell, query the realtime node directly:
+
+timeseries.json:
+
+``` json
+{
+    "queryType": "timeseries",
+    "dataSource": "wikipedia",
+    "intervals": [ "2010-01-01/2020-01-01" ],
+    "granularity": "all",
+    "aggregations": [
+        {"type": "longSum", "fieldName": "count", "name": "edit_count"},
+        {"type": "doubleSum", "fieldName": "added", "name": "chars_added"}
+    ]
+}
+```
+
+```
+curl -X POST 'http://localhost:8083/druid/v2/?pretty' -H 'content-type: application/json'  -d  @timeseries.json
+```
+
+This query times out after ~5min, even after the indexer has only run a few seconds. It works fine for the historical node. I verified this by tuning down the wikipedia_realtime.spec (as indicated in the tutorial) to push the segments more quickly. After segments are pushed, a query against the historical (port 8081) returns ok.
+
+I put in some trace statements to see where the tasks are being added to the ExecutorService. 
+Here are some of those log details:
+https://gist.github.com/housejester/4a88816c06174aca0bbd
+Essentially, it seems that ChainedExecutionQueryRunner is running as a task, taking up the 1 thread, but then submitting more tasks to the same ExecutorService, then waiting for them to complete.
+
+Setting the numThreads to 2 fixes it (after also bumping up the heap to 512, otherwise process dies immediately due to insufficient heap). Seems like long-term, the initial query task should not be submitting work to the same executor service. otherwise, even if numThreads is > 1, if you get multiple requests simultaneously, it could lead to a thread starvation situation where the requests wind up having to time out. 
+
+Perhaps it should be executing the initial work in the same request thread, and only adding the second level tasks (not sure what this is, whatever the sequence builder is breaking the work into) to the executor service. I haven't looked at the historical to see how it is different. 

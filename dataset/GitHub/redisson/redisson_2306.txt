@@ -1,0 +1,150 @@
+thread blocked at closeNodeConnections
+Hi,
+
+The call to closeNodeConnection waits indefinitely on call to MasterSlaveConnectionManager.closeNodeConnections.
+
+**Section from thread dump:**
+```
+/service/soap
+Transaction type: Web
+Transaction name: /service/soap
+Duration: 818,433.1 milliseconds
+CPU time: 34.0 milliseconds
+"qtp1957530885-64062" #64062
+   java.lang.Thread.State: WAITING
+        at java.lang.Object.wait(Native Method)
+        - waiting on io.netty.util.concurrent.ImmediateEventExecutor$ImmediatePromise@5dd96fe
+        at java.lang.Object.wait(Object.java:328)
+        at io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly(DefaultPromise.java:254)
+        at io.netty.util.concurrent.DefaultPromise.syncUninterruptibly(DefaultPromise.java:340)
+        at org.redisson.misc.RedissonPromise.syncUninterruptibly(RedissonPromise.java:128)
+        at org.redisson.misc.RedissonPromise.syncUninterruptibly(RedissonPromise.java:35)
+        at org.redisson.connection.MasterSlaveConnectionManager.closeNodeConnections(MasterSlaveConnectionManager.java:234)
+        at org.redisson.cluster.ClusterConnectionManager.shutdown(ClusterConnectionManager.java:780)
+        at org.redisson.Redisson.shutdown(Redisson.java:670)
+        at com.zimbra.cs.mailbox.redis.RedissonRetryClient.restart(RedissonRetryClient.java:117)
+        - locked on com.zimbra.cs.mailbox.redis.RedissonRetryClient@58a8ea4c
+        at com.zimbra.cs.mailbox.redis.RedissonRetryDecorator.reconnect(RedissonRetryDecorator.java:64)
+        - locked on com.zimbra.cs.mailbox.redis.RedissonRetryScript@67d62c10
+        at com.zimbra.cs.mailbox.redis.RedissonRetryDecorator.access$000(RedissonRetryDecorator.java:15)
+        at com.zimbra.cs.mailbox.redis.RedissonRetryDecorator$1.run(RedissonRetryDecorator.java:35)
+        at com.zimbra.cs.util.RetryUtil$RequestWithRetry.execute(RetryUtil.java:26)
+        at com.zimbra.cs.mailbox.redis.RedissonRetryDecorator.runCommand(RedissonRetryDecorator.java:82)
+        at com.zimbra.cs.mailbox.redis.RedissonRetryScript.eval(RedissonRetryScript.java:171)
+        at com.zimbra.cs.mailbox.redis.RedisBackedLRUItemCache$LRUCacheTrimScript.trimCache(RedisBackedLRUItemCache.java:68)
+        at com.zimbra.cs.mailbox.TransactionAwareLRUItemCache$LRUCacheCachedObject.trimCache(TransactionAwareLRUItemCache.java:134)
+        at com.zimbra.cs.mailbox.TransactionAwareLRUItemCache.trimCache(TransactionAwareLRUItemCache.java:43)
+        at com.zimbra.cs.mailbox.cache.RedisItemCache.trim(RedisItemCache.java:132)
+        at com.zimbra.cs.mailbox.Mailbox.trimItemCache(Mailbox.java:9211)
+        at com.zimbra.cs.mailbox.Mailbox.commitCache(Mailbox.java:9095)
+        at com.zimbra.cs.mailbox.Mailbox.access$1900(Mailbox.java:295)
+        at com.zimbra.cs.mailbox.Mailbox$MailboxTransaction.close(Mailbox.java:10168)
+        at com.zimbra.cs.mailbox.MailboxIndex.search(MailboxIndex.java:604)
+        at com.zimbra.cs.index.DBQueryOperation.dbSearch(DBQueryOperation.java:669)
+        at com.zimbra.cs.index.DBQueryOperation.luceneFirstGetNextChunk(DBQueryOperation.java:798)
+        at com.zimbra.cs.index.DBQueryOperation.getNextChunk(DBQueryOperation.java:844)
+        at com.zimbra.cs.index.DBQueryOperation.peekNext(DBQueryOperation.java:526)
+        at com.zimbra.cs.index.QueryOperation.hasNext(QueryOperation.java:169)
+        at com.zimbra.cs.index.ItemPreloadingGrouper.bufferHits(ItemPreloadingGrouper.java:54)
+        at com.zimbra.cs.index.BufferingResultsGrouper.hasNext(BufferingResultsGrouper.java:68)
+        at com.zimbra.cs.index.ConvQueryResults.internalGetNextHit(ConvQueryResults.java:59)
+        at com.zimbra.cs.index.ConvQueryResults.bufferNextHit(ConvQueryResults.java:117)
+        at com.zimbra.cs.index.ConvQueryResults.peekNext(ConvQueryResults.java:124)
+        at com.zimbra.cs.index.ZimbraQueryResultsImpl.hasNext(ZimbraQueryResultsImpl.java:93)
+        at com.zimbra.cs.index.ItemPreloadingGrouper.bufferHits(ItemPreloadingGrouper.java:54)
+        at com.zimbra.cs.index.BufferingResultsGrouper.peekNext(BufferingResultsGrouper.java:73)
+        at com.zimbra.cs.index.FilteredQueryResults.peekNext(FilteredQueryResults.java:195)
+        at com.zimbra.cs.index.FilteredQueryResults.hasNext(FilteredQueryResults.java:145)
+        at com.zimbra.cs.index.ResultsPager.hasNext(ResultsPager.java:139)
+        at com.zimbra.cs.service.mail.Search.putHits(Search.java:202)
+        at com.zimbra.cs.service.mail.Search.handle(Search.java:127)
+        at com.zimbra.soap.SoapEngine.dispatchRequest(SoapEngine.java:664)
+        at com.zimbra.soap.SoapEngine.dispatch(SoapEngine.java:509)
+        at com.zimbra.soap.SoapEngine.dispatch(SoapEngine.java:296)
+        at com.zimbra.soap.SoapServlet.doWork(SoapServlet.java:308)
+        at com.zimbra.soap.SoapServlet.doPost(SoapServlet.java:217)
+        at javax.servlet.http.HttpServlet.service(HttpServlet.java:707)
+        at com.zimbra.cs.servlet.ZimbraServlet.service(ZimbraServlet.java:214)
+        at javax.servlet.http.HttpServlet.service(HttpServlet.java:790)
+        at org.eclipse.jetty.servlet.ServletHolder.handle(ServletHolder.java:873)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1623)
+        at org.eclipse.jetty.websocket.server.WebSocketUpgradeFilter.doFilter(WebSocketUpgradeFilter.java:214)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at com.zimbra.cs.servlet.CsrfFilter.doFilter(CsrfFilter.java:175)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at com.zimbra.cs.servlet.RequestStringFilter.doFilter(RequestStringFilter.java:54)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at com.zimbra.cs.servlet.SetHeaderFilter.doFilter(SetHeaderFilter.java:59)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at com.zimbra.cs.servlet.ETagHeaderFilter.doFilter(ETagHeaderFilter.java:47)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at com.zimbra.cs.servlet.ContextPathBasedThreadPoolBalancerFilter.doFilter(ContextPathBasedThreadPoolBalancerFilter.java:107)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at com.zimbra.cs.servlet.ZimbraQoSFilter.doFilter(ZimbraQoSFilter.java:116)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at com.zimbra.cs.servlet.ZimbraInvalidLoginFilter.doFilter(ZimbraInvalidLoginFilter.java:117)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at org.eclipse.jetty.servlets.DoSFilter.doFilterChain(DoSFilter.java:482)
+        at org.eclipse.jetty.servlets.DoSFilter.doFilter(DoSFilter.java:327)
+        at org.eclipse.jetty.servlets.DoSFilter.doFilter(DoSFilter.java:297)
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1610)
+        at org.eclipse.jetty.servlet.ServletHandler.doHandle(ServletHandler.java:540)
+        at org.eclipse.jetty.server.handler.ScopedHandler.handle(ScopedHandler.java:146)
+        at org.eclipse.jetty.security.SecurityHandler.handle(SecurityHandler.java:524)
+        at org.eclipse.jetty.server.handler.HandlerWrapper.handle(HandlerWrapper.java:132)
+        at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:257)
+        at org.eclipse.jetty.server.session.SessionHandler.doHandle(SessionHandler.java:1700)
+        at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:255)
+        at org.eclipse.jetty.server.handler.ContextHandler.doHandle(ContextHandler.java:1345)
+        at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:203)
+        at org.eclipse.jetty.servlet.ServletHandler.doScope(ServletHandler.java:480)
+        at org.eclipse.jetty.server.session.SessionHandler.doScope(SessionHandler.java:1667)
+        at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:201)
+        at org.eclipse.jetty.server.handler.ContextHandler.doScope(ContextHandler.java:1247)
+        at org.eclipse.jetty.server.handler.ScopedHandler.handle(ScopedHandler.java:144)
+        at org.eclipse.jetty.server.handler.ContextHandlerCollection.handle(ContextHandlerCollection.java:220)
+        at org.eclipse.jetty.server.handler.HandlerCollection.handle(HandlerCollection.java:152)
+        at org.eclipse.jetty.server.handler.HandlerWrapper.handle(HandlerWrapper.java:132)
+        at org.eclipse.jetty.rewrite.handler.RewriteHandler.handle(RewriteHandler.java:335)
+        at org.eclipse.jetty.server.handler.gzip.GzipHandler.handle(GzipHandler.java:753)
+        at org.eclipse.jetty.server.handler.HandlerWrapper.handle(HandlerWrapper.java:132)
+        at org.eclipse.jetty.server.Server.handle(Server.java:505)
+        at org.eclipse.jetty.server.HttpChannel.handle(HttpChannel.java:370)
+        at org.eclipse.jetty.server.HttpConnection.onFillable(HttpConnection.java:267)
+        at org.eclipse.jetty.io.AbstractConnection$ReadCallback.succeeded(AbstractConnection.java:305)
+        at org.eclipse.jetty.io.FillInterest.fillable(FillInterest.java:103)
+        at org.eclipse.jetty.io.ssl.SslConnection$DecryptedEndPoint.onFillable(SslConnection.java:427)
+        at org.eclipse.jetty.io.ssl.SslConnection.onFillable(SslConnection.java:321)
+        at org.eclipse.jetty.io.ssl.SslConnection$2.succeeded(SslConnection.java:159)
+        at org.eclipse.jetty.io.FillInterest.fillable(FillInterest.java:103)
+        at org.eclipse.jetty.io.ChannelEndPoint$2.run(ChannelEndPoint.java:117)
+        at org.eclipse.jetty.util.thread.QueuedThreadPool.runJob(QueuedThreadPool.java:698)
+        at org.eclipse.jetty.util.thread.QueuedThreadPool$Runner.run(QueuedThreadPool.java:804)
+        at java.lang.Thread.run(Thread.java:834)
+```
+**Expected behavior**
+MasterSlaveConnectionManager.closeNodeConnections should throw an timeout exception if the same is not able to complete within a configured timeout.
+
+**Actual behavior**
+Thread hangs indefinitely at the request.
+
+**Redis version**
+5.0.5
+
+**Redisson version**
+3.10.7
+
+**Redisson configuration**
+nettyThreads=16
+masterConnectionPoolSize=200
+masterConnectionMinimumIdleSize=100
+subscriptionConnectionPoolSize=200
+subscriptionConnectionMinimumIdleSize=100
+subscriptionsPerConnection=10
+connectionTimeout=10000
+retryInterval=3000
+retryAttempts=10
+keepAlive=true
+tcpNoDelay=true
+clusterScanInterval=2000
+pingConnectionInterval=10000

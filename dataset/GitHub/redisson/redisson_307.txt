@@ -1,0 +1,13 @@
+Redisson shutdown hangs if redis server was down
+_Env:_
+  Server: 3.0.3
+  Client: 2.1.6
+
+_Steps to reproduce:_
+- Start redis server
+- Create redisson bean
+- Stop on a breakpoint inside test
+- Shutdown redis server
+- call redisson.shutdown()
+
+What I see is that ConnectionWatchdog is scheduling tryReconnect indefinitely incrementing attempts and connection is not closing. But if I put break point in ConnectionWatchdog#channelInactive (line 64) and stop there, connections are closing properly. Perhaps there is race condition somewhere?  

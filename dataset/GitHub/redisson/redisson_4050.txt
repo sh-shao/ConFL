@@ -1,0 +1,130 @@
+MultiLock causes deadlocks in high concurrency cases
+<!--
+Try Redisson PRO https://redisson.pro with ultra-fast performance and support by SLA.
+-->
+
+**Expected behavior**
+
+No DeadLock
+
+**Actual behavior**
+
+DeadLock
+
+**Steps to reproduce or test case**
+
+**Redis version**
+
+6.2.6
+
+**Redisson version**
+
+3.16.1
+
+**The complete code is as follows**
+
+```java
+public static void main(String[] args) throws InterruptedException {
+    long sum = 0;
+
+    for (int i = 0; i < 10; i++) {
+        log.info("======");
+        log.info("====== Test case" + (i + 1));
+        log.info("======");
+        sum += benchmark();
+        log.info("===== sum: {}", sum);
+        Thread.sleep(100);
+    }
+
+    log.info("===== avg: {}", sum / 10);
+}
+
+private static long benchmark() throws InterruptedException {
+    ArrayBlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(5000);
+    ThreadPoolExecutor executor = new ThreadPoolExecutor(5, 20, 30, TimeUnit.SECONDS, queue, new ThreadPoolExecutor.CallerRunsPolicy());
+    Config config = new Config();
+    config.useSingleServer()
+            .setAddress("redis://127.0.0.1:6379")
+            .setPassword("123456")
+            // .setKeepAlive(true)
+            // .setTcpNoDelay(true);
+            .setSubscriptionConnectionMinimumIdleSize(10)
+            // .setSubscriptionConnectionPoolSize(50);
+            .setSubscriptionsPerConnection(50);
+    config.setLockWatchdogTimeout(15 * 1000);
+    config.setUseScriptCache(true);
+    RedissonClient client = Redisson.create(config);
+    AtomicLong counter = new AtomicLong();
+    long startTime = System.currentTimeMillis();
+    Random random = new Random();
+
+    for (int i = 0; i < 100000; ++i) {
+        int ii = i;
+        executor.submit(() -> {
+            try {
+                int count = random.nextInt(5) + 1;
+                List<String> resources = new ArrayList<>();
+
+                for (int k = 0; k < count; k++) {
+                    resources.add(String.valueOf(random.nextInt(1000)));
+                }
+
+                boolean write = ii % 2 == 0;
+                runWithMultiLock(client, resources, write);
+                counter.incrementAndGet();
+                // log.info("count: {}", counter.incrementAndGet());
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                log.error("lockAndUnlock", ex);
+            }
+        });
+    }
+
+    executor.shutdown();
+    executor.awaitTermination(10000, TimeUnit.SECONDS);
+
+    long endTime = System.currentTimeMillis();
+    client.shutdown();
+
+    long cost = endTime - startTime;
+    log.info("counter: {}, cost: {}", counter.get(), cost);
+    return cost;
+}
+
+private static void runWithMultiLock(RedissonClient client, List<String> resources, boolean write) throws InterruptedException {
+    // log.info("{}, prepare {} lock", Thread.currentThread().getId(), write ? "write" : "read");
+
+    int count = resources.size();
+    RLock[] locks = new RLock[count];
+
+    for (int i = 0; i < count; i++) {
+        RReadWriteLock rwLock = client.getReadWriteLock(resources.get(i));
+
+        if (write) {
+            locks[i] = rwLock.writeLock();
+        } else {
+            locks[i] = rwLock.readLock();
+        }
+    }
+
+    RLock lock = client.getMultiLock(locks);
+
+    // log.info("{}, before {} lock", Thread.currentThread().getId(), write ? "write" : "read");
+    lock.lock(800, TimeUnit.MILLISECONDS);
+    long startTime = System.currentTimeMillis();
+    // log.info("{}, after {} lock", Thread.currentThread().getId(), write ? "write" : "read");
+    Thread.sleep(10);
+    // log.info("{}, {} unlock", Thread.currentThread().getId(), write ? "write" : "read");
+
+    try {
+        lock.unlock();
+    } catch (IllegalMonitorStateException ex) {
+        long endTime = System.currentTimeMillis();
+        log.info("===== FUCK runWithMultiLock!!!! COST: {}", (endTime - startTime));
+    }
+}
+```
+
+**Deadlocks don't happen every time. After running the program for a while, I found that the process stopped and the keys in redis were fixed, not added or reduced. What is even more strange is that the expiration time I added the lock is 800ms, and if I use the ttl command to get the expiration time, the result should be 0 or 1, or a negative number. But, I found a number greater than 1! And it keeps changing, like this: 4s -> 3s -> 2s -> 4s**
+
+![image](https://user-images.githubusercontent.com/59204986/147313185-b129250d-c6b3-40e1-9408-d4da8f6f37d2.png)

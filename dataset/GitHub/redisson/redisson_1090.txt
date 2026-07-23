@@ -1,0 +1,22 @@
+Cannot shutdown RedissonNode if there infinite lock is locked
+To reproduce the problem:
+
+1 Create a Runnable job which will last ~ 1 minutes (greater than "internalLockLeaseTime" used by RedissonLock.java), get a lock and lock it by lock.tryLock(), release the lock after the job is done.
+
+2 Schedule and run this job using Redission framework.
+
+3 After start RedissonNode, just call node.shutdown(), following exception will be raised.
+
+org.redisson.RedissonShutdownException: Redisson is shutdown
+	at org.redisson.command.CommandAsyncService.async(CommandAsyncService.java:481)
+	at org.redisson.command.CommandAsyncService.evalAsync(CommandAsyncService.java:455)
+	at org.redisson.command.CommandAsyncService.evalWriteAsync(CommandAsyncService.java:398)
+	at org.redisson.RedissonLock$3.run(RedissonLock.java:206)
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.expire(HashedWheelTimer.java:663)
+	at io.netty.util.HashedWheelTimer$HashedWheelBucket.expireTimeouts(HashedWheelTimer.java:738)
+	at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:466)
+	at java.lang.Thread.run(Thread.java:745)
+
+This is because RedissonLock.scheduleExpirationRenewal still running after we shutdown the node.
+
+Can Redisson stop the scheduleExpirationRenewal when user call node.shutdown()? 

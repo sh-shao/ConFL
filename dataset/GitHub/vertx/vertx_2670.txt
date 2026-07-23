@@ -1,0 +1,2 @@
+Client connections on GlobalEventExecutor thread that are not propagated to the application
+Sometimes the Netty's bootstrap may notify client connections on the `GlobalEventExecutor` thread when it happens early in the boostrap when an event-loop has not been yet determined. Vertx expects notifications to happen on the event loop thread and this results in a `Uh oh! Event loop context executing with wrong thread!` failure.

@@ -1,0 +1,52 @@
+OracleClient.generateTemporaryTableName leads to query failure in case of concurrent tmp table creation
+Oracle connector uses `System.nanoTime()` instead of UUID due to identifier name length limitation:
+```java
+    @Override
+    protected String generateTemporaryTableName()
+    {
+        return "tmp_trino_" + System.nanoTime();
+    }
+```
+
+This may lead to query failure when users executed CTAS or INSERT at the same time.
+```
+Error:  io.trino.plugin.oracle.TestOracleTypeMapping.testBooleanType  Time elapsed: 1.823 s  <<< FAILURE!
+java.lang.RuntimeException: 
+Error executing sql:
+CREATE TABLE boolean_typesg80aqvo4oj AS SELECT CAST(CAST(true AS DECIMAL(1, 0)) AS boolean) col_0,
+CAST(CAST(false AS DECIMAL(1, 0)) AS boolean) col_1
+	at io.trino.testing.sql.TrinoSqlExecutor.execute(TrinoSqlExecutor.java:45)
+	at io.trino.testing.sql.TestTable.<init>(TestTable.java:49)
+	at io.trino.testing.sql.TestTable.<init>(TestTable.java:42)
+	at io.trino.testing.datatype.CreateAsSelectDataSetup.setupTestTable(CreateAsSelectDataSetup.java:46)
+	at io.trino.testing.datatype.SqlDataTypeTest.execute(SqlDataTypeTest.java:78)
+	at io.trino.testing.datatype.SqlDataTypeTest.execute(SqlDataTypeTest.java:72)
+	at io.trino.plugin.oracle.AbstractTestOracleTypeMapping.testBooleanType(AbstractTestOracleTypeMapping.java:593)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:566)
+	at org.testng.internal.MethodInvocationHelper.invokeMethod(MethodInvocationHelper.java:104)
+	at org.testng.internal.Invoker.invokeMethod(Invoker.java:645)
+	at org.testng.internal.Invoker.invokeTestMethod(Invoker.java:851)
+	at org.testng.internal.Invoker.invokeTestMethods(Invoker.java:1177)
+	at org.testng.internal.TestMethodWorker.invokeTestMethods(TestMethodWorker.java:129)
+	at org.testng.internal.TestMethodWorker.run(TestMethodWorker.java:112)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628)
+	at java.base/java.lang.Thread.run(Thread.java:829)
+Caused by: java.lang.RuntimeException: ORA-00955: name is already used by an existing object
+
+	at io.trino.testing.AbstractTestingTrinoClient.execute(AbstractTestingTrinoClient.java:122)
+	at io.trino.testing.DistributedQueryRunner.execute(DistributedQueryRunner.java:506)
+	at io.trino.testing.sql.TrinoSqlExecutor.execute(TrinoSqlExecutor.java:42)
+	... 19 more
+	Suppressed: java.lang.Exception: SQL: CREATE TABLE boolean_typesg80aqvo4oj AS SELECT CAST(CAST(true AS DECIMAL(1, 0)) AS boolean) col_0,
+CAST(CAST(false AS DECIMAL(1, 0)) AS boolean) col_1
+		at io.trino.testing.DistributedQueryRunner.execute(DistributedQueryRunner.java:509)
+		... 20 more
+...
+	Suppressed: java.lang.RuntimeException: Query: CREATE TABLE "TRINO_TEST"."TMP_TRINO_339516199769" ("COL_0" number(1), "COL_1" number(1))
+```
+
+https://github.com/trinodb/trino/runs/5401727429

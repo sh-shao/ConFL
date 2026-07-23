@@ -1,0 +1,100 @@
+[Bug] Deadlock pulsar-io and metadata-store if transactions enabled
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+Seen in 2.10, believe the issue still exists in current master, not able to reproduce
+
+### Minimal reproduce step
+
+Not able to reproduce it programatically
+
+
+
+### What did you expect to see?
+
+To not get deadlock
+
+### What did you see instead?
+
+Metadata store
+```
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911460259Z stdout F     at java.base@11.0.17/java.lang.Thread.run(Thread.java:829)
+-- | --
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911454155Z stdout F     at app//io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911448097Z stdout F     at java.base@11.0.17/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911442099Z stdout F     at java.base@11.0.17/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911435811Z stdout F     at java.base@11.0.17/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911429439Z stdout F     at java.base@11.0.17/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911423083Z stdout F     at java.base@11.0.17/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:515)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911415954Z stdout F     at app//org.apache.pulsar.metadata.impl.ZKMetadataStore$Lambda$350/0x00000008404b5840.run(Unknown Source)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911409602Z stdout F     at app//org.apache.pulsar.metadata.impl.ZKMetadataStore.lambda$existsFromStore$9(ZKMetadataStore.java:320)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911395777Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:2073)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911389631Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:506)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911377548Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture$UniAccept.tryFire(CompletableFuture.java:714)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911371189Z stdout F     at app//org.apache.pulsar.broker.transaction.pendingack.impl.PendingAckHandleImpl$Lambda$1033/0x000000084092d440.accept(Unknown Source)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911364888Z stdout F     at app//org.apache.pulsar.broker.transaction.pendingack.impl.PendingAckHandleImpl.lambda$new$0(PendingAckHandleImpl.java:148)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911356003Z stdout F       - locked org.apache.pulsar.broker.transaction.pendingack.impl.PendingAckHandleImpl@1289d850
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911346505Z stdout F     at app//org.apache.pulsar.broker.transaction.pendingack.impl.PendingAckHandleImpl.completeHandleFuture(PendingAckHandleImpl.java:904)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911340386Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:2073)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911334424Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:506)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911328294Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture$UniCompose.tryFire(CompletableFuture.java:1072)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911322147Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentSubscription$Lambda$1032/0x000000084092d040.apply(Unknown Source)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911315581Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentSubscription.lambda$addConsumer$2(PersistentSubscription.java:214)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911309219Z stdout F      owned by pulsar-io-12-16 Id=161
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911302363Z stdout F "metadata-store-18-1" Id=16 in BLOCKED on lock=org.apache.pulsar.broker.service.persistent.PersistentSubscription@981a97c
+```
+and pulsar-io
+```
+
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911735597Z stdout F     at app//io.netty.handler.codec.ByteToMessageDecoder.fireChannelRead(ByteToMessageDecoder.java:346)
+-- | --
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911729568Z stdout F     at app//io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:412)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911723289Z stdout F     at app//io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:420)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911716847Z stdout F     at app//io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:444)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.91171054Z stdout F     at app//org.apache.pulsar.common.protocol.PulsarDecoder.channelRead(PulsarDecoder.java:177)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911704302Z stdout F     at app//org.apache.pulsar.client.impl.ClientCnx.handleError(ClientCnx.java:716)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911698102Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.completeExceptionally(CompletableFuture.java:2088)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911691782Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:506)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911685096Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture$UniExceptionally.tryFire(CompletableFuture.java:970)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911676176Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.uniExceptionally(CompletableFuture.java:986)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911669334Z stdout F     at app//org.apache.pulsar.client.impl.ProducerImpl$Lambda$886/0x00000008408bbc40.apply(Unknown Source)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911662942Z stdout F     at app//org.apache.pulsar.client.impl.ProducerImpl.lambda$connectionOpened$17(ProducerImpl.java:1724)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911656632Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.completeExceptionally(CompletableFuture.java:2088)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911650516Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:506)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911644463Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture$UniExceptionally.tryFire(CompletableFuture.java:970)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911638403Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.uniExceptionally(CompletableFuture.java:986)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911632203Z stdout F     at app//org.apache.pulsar.broker.transaction.buffer.impl.TopicTransactionBuffer$TopicTransactionBufferRecover$Lambda$807/0x000000084086f040.apply(Unknown Source)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911625601Z stdout F     at app//org.apache.pulsar.broker.transaction.buffer.impl.TopicTransactionBuffer$TopicTransactionBufferRecover.lambda$run$3(TopicTransactionBuffer.java:690)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911614336Z stdout F     at app//org.apache.pulsar.broker.transaction.buffer.impl.TopicTransactionBuffer$1.recoverExceptionally(TopicTransactionBuffer.java:213)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911608156Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentTopic.close(PersistentTopic.java:1284)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911602161Z stdout F     at app//org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap.forEach(ConcurrentOpenHashMap.java:272)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911596056Z stdout F     at app//org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap$Section.forEach(ConcurrentOpenHashMap.java:544)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911586921Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentTopic$Lambda$1754/0x0000000840724c40.accept(Unknown Source)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911580879Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentTopic.lambda$close$35(PersistentTopic.java:1284)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911574831Z stdout F       - locked org.apache.pulsar.broker.service.persistent.PersistentSubscription@981a97c
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911568496Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentSubscription.disconnect(PersistentSubscription.java:899)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911562385Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.thenCompose(CompletableFuture.java:2235)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.9115553Z stdout F     at java.base@11.0.17/java.util.concurrent.CompletableFuture.uniComposeStage(CompletableFuture.java:1106)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911549267Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentSubscription$Lambda$1764/0x00000008405ab040.apply(Unknown Source)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911543136Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentSubscription.lambda$disconnect$13(PersistentSubscription.java:899)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911536996Z stdout F       - locked org.apache.pulsar.broker.service.persistent.PersistentSubscription@981a97c
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911530821Z stdout F     at app//org.apache.pulsar.broker.service.persistent.PersistentSubscription.close(PersistentSubscription.java:879)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911524639Z stdout F     at app//org.apache.pulsar.broker.transaction.pendingack.impl.PendingAckHandleImpl.close(PendingAckHandleImpl.java:938)
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911518203Z stdout F      owned by metadata-store-18-1 Id=16
+2022-12-19T08:36:33.404+0000 | 2022-12-19T08:36:30.911507882Z stdout F "pulsar-io-12-16" Id=161 in BLOCKED on lock=org.apache.pulsar.broker.transaction.pendingack.impl.PendingAckHandleImpl@1289d850
+
+```
+
+
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [X] I'm willing to submit a PR!

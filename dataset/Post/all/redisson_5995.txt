@@ -1,0 +1,89 @@
+NPEs Showing in Redisson Tomcat Logs
+### Redis version
+
+7.1.0
+
+### Redisson version
+
+3.32.0
+
+### Redisson configuration
+
+Clustered configuration (2 nodes, 2 shards per node).
+
+Redisson Tomcat Session Manager configurations:
+
+ReadMode: MEMORY
+UpdateMode: AFTER_REQUEST
+BroadcastSessionEvents: true
+Threads: 64
+NettyThreads: 128
+Transport Mode: EPOLL
+SSL Provider: OPENSSL
+
+We do have a custom keyPrefix
+Everything else is default values
+Tomcat version: 9.0.86
+Java version: 11
+
+### What is the Expected behavior?
+
+No NullPointerExceptions.
+
+### What is the Actual behavior?
+
+When scale testing our application, we periodically see NullPointerExceptions in our logs. The two most common examples are:
+
+```
+org.apache.coyote.http11.Http11Processor service
+SEVERE: Error processing request
+java.lang.NullPointerException
+	at org.redisson.tomcat.RedissonSession.fastPut(RedissonSession.java:256)
+	at org.redisson.tomcat.RedissonSession.access(RedissonSession.java:217)
+	at org.redisson.tomcat.RedissonSessionManager.findSession(RedissonSessionManager.java:199)
+	at org.redisson.tomcat.RedissonSessionManager.findSession(RedissonSessionManager.java:169)
+	at org.apache.catalina.connector.Request.isRequestedSessionIdValid(Request.java:2294)
+	at org.apache.catalina.connector.CoyoteAdapter.parseSessionCookiesId(CoyoteAdapter.java:1028)
+	at org.apache.catalina.connector.CoyoteAdapter.postParseRequest(CoyoteAdapter.java:728)
+	at org.apache.catalina.connector.CoyoteAdapter.service(CoyoteAdapter.java:341)
+	at org.apache.coyote.http11.Http11Processor.service(Http11Processor.java:388)
+	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:63)
+	at org.apache.coyote.AbstractProtocol$ConnectionHandler.process(AbstractProtocol.java:928)
+	at org.apache.tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1791)
+	at org.apache.tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1190)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:659)
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:63)
+	at java.base/java.lang.Thread.run(Thread.java:829)
+```
+
+```
+org.apache.coyote.http11.Http11Processor service
+SEVERE: Error processing request
+java.lang.NullPointerException
+	at org.redisson.tomcat.RedissonSession.expireSession(RedissonSession.java:227)
+	at org.redisson.tomcat.RedissonSession.endAccess(RedissonSession.java:323)
+	at org.redisson.tomcat.RedissonSessionManager.findSession(RedissonSessionManager.java:200)
+	at org.redisson.tomcat.RedissonSessionManager.findSession(RedissonSessionManager.java:169)
+	at org.apache.catalina.connector.Request.isRequestedSessionIdValid(Request.java:2294)
+	at org.apache.catalina.connector.CoyoteAdapter.parseSessionCookiesId(CoyoteAdapter.java:1028)
+	at org.apache.catalina.connector.CoyoteAdapter.postParseRequest(CoyoteAdapter.java:728)
+	at org.apache.catalina.connector.CoyoteAdapter.service(CoyoteAdapter.java:341)
+	at org.apache.coyote.http11.Http11Processor.service(Http11Processor.java:388)
+	at org.apache.coyote.AbstractProcessorLight.process(AbstractProcessorLight.java:63)
+	at org.apache.coyote.AbstractProtocol$ConnectionHandler.process(AbstractProtocol.java:928)
+	at org.apache.tomcat.util.net.NioEndpoint$SocketProcessor.doRun(NioEndpoint.java:1791)
+	at org.apache.tomcat.util.net.SocketProcessorBase.run(SocketProcessorBase.java:52)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1190)
+	at org.apache.tomcat.util.threads.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:659)
+	at org.apache.tomcat.util.threads.TaskThread$WrappingRunnable.run(TaskThread.java:63)
+	at java.base/java.lang.Thread.run(Thread.java:829)
+```
+
+While we haven't been able to catch it in a debugger, it would seem that we are in some sort of race condition where `this.map` is becoming null.
+
+Based on the second stacktrace, I'm wondering if somehow we might be trying to end a session multiple times in parallel. One thread starts tearing it down, map gets set to null, and then another thread comes in and also is trying to tear it down?
+
+### Additional information
+
+_No response_

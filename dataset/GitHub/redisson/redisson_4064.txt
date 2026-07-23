@@ -1,0 +1,110 @@
+Thread safe problem when acquiring locks resulting in a pubsub channel not being unsubscribed
+This seems to be related to:  https://github.com/redisson/redisson/issues/2575
+
+**Expected behavior**
+The pub/sub channels that are created while trying to acquire a lock with RedissonLock should be unsubscribed when no longer needed.
+
+**Actual behavior**
+In some cases when 2 pub sub channels are created around the same time for (2 different lock keys) one of the two throws an error:
+`Subscribe timeout: (7500ms). Increase 'subscriptionsPerConnection' and/or 'subscriptionConnectionPoolSize' parameters.`
+
+After this error the failed lock key will lock fine when not locked. If it is however locked by another thread it will fail instantly.
+see the logging from the test case below, notice how thread [pool-1-thread-12] successfully locks key 0. When thread [pool-1-thread-19] tries to lock lockkey-0  it instantly throws the subscribe timeout exception (notice it does not wait 7500ms).
+
+If there is no locking going on and the app is still running it kept a channel active for lockkey-0
+
+    127.0.0.1:6379> PUBSUB CHANNELS
+    1) "redisson_lock__channel:{lock-0}"
+
+
+Some logging from the test case when it fails:
+
+    14:34:42.181 [pool-1-thread-27] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-0
+    14:34:42.181 [pool-1-thread-27] INFO com.bprocare.atc.ReddisTest - before lock lock-0
+    114:34:42.182 [pool-1-thread-27] INFO com.bprocare.atc.ReddisTest - after  lock lock-0
+    14:34:42.182 [pool-1-thread-13] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-4
+    14:34:42.182 [pool-1-thread-13] INFO com.bprocare.atc.ReddisTest - before lock lock-3
+    14:34:42.183 [pool-1-thread-22] INFO com.bprocare.atc.ReddisTest - after  lock lock-4
+    14:34:42.192 [pool-1-thread-6] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-3
+    14:34:42.192 [pool-1-thread-24] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-1
+    14:34:42.192 [pool-1-thread-24] INFO com.bprocare.atc.ReddisTest - before lock lock-4
+    14:34:42.192 [pool-1-thread-6] INFO com.bprocare.atc.ReddisTest - before lock lock-3
+    14:34:42.192 [pool-1-thread-12] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-2
+    14:34:42.192 [pool-1-thread-12] INFO com.bprocare.atc.ReddisTest - before lock lock-0
+    14:34:42.192 [pool-1-thread-27] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-0
+    14:34:42.192 [pool-1-thread-27] INFO com.bprocare.atc.ReddisTest - before lock lock-3
+    14:34:42.193 [pool-1-thread-31] INFO com.bprocare.atc.ReddisTest - after  lock lock-3
+    14:34:42.193 [pool-1-thread-19] INFO com.bprocare.atc.ReddisTest - after  lock lock-1
+    14:34:42.193 [pool-1-thread-4] INFO com.bprocare.atc.ReddisTest - after  lock lock-2
+    14:34:42.194 [pool-1-thread-12] INFO com.bprocare.atc.ReddisTest - after  lock lock-0
+    14:34:42.197 [pool-1-thread-31] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-3
+    14:34:42.197 [pool-1-thread-31] INFO com.bprocare.atc.ReddisTest - before lock lock-1
+    14:34:42.198 [pool-1-thread-13] INFO com.bprocare.atc.ReddisTest - after  lock lock-3
+    14:34:42.206 [pool-1-thread-22] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-4
+    14:34:42.206 [pool-1-thread-4] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-2
+    14:34:42.206 [pool-1-thread-22] INFO com.bprocare.atc.ReddisTest - before lock lock-1
+    14:34:42.206 [pool-1-thread-4] INFO com.bprocare.atc.ReddisTest - before lock lock-2
+    14:34:42.208 [pool-1-thread-20] INFO com.bprocare.atc.ReddisTest - after  lock lock-2
+    14:34:42.208 [pool-1-thread-16] INFO com.bprocare.atc.ReddisTest - after  lock lock-4
+    14:34:42.212 [pool-1-thread-19] INFO com.bprocare.atc.ReddisTest - after  -unlock lock-1
+    14:34:42.212 [pool-1-thread-19] INFO com.bprocare.atc.ReddisTest - before lock lock-0
+    14:34:42.213 [pool-1-thread-19] ERROR com.bprocare.atc.ReddisTest - e
+    org.redisson.client.RedisTimeoutException: Subscribe timeout: (7500ms). Increase 'subscriptionsPerConnection' and/or 'subscriptionConnectionPoolSize' parameters.
+	    at org.redisson.command.CommandAsyncService.syncSubscription(CommandAsyncService.java:88)
+	    at org.redisson.RedissonLock.lock(RedissonLock.java:107)
+	    at org.redisson.RedissonLock.lock(RedissonLock.java:69)
+	    at com.bprocare.atc.ReddisTest.lambda$main$0(ReddisTest.java:33)
+	    at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+	    at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+	    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	    at java.lang.Thread.run(Thread.java:748)
+
+
+**Steps to reproduce or test case**
+
+This does not always fail, sometimes it runs a million locks without issues sometimes it throws the error and puts a channel in a failed state.
+
+    @Slf4j
+    public class ReddisTest {
+    
+        public static void main(String[] args) throws InterruptedException {
+            Config config = new Config();
+            config.useSingleServer()
+                    .setSubscriptionConnectionPoolSize(2)
+                    .setSubscriptionConnectionMinimumIdleSize(2)
+                    .setSubscriptionsPerConnection(2)
+                    .setAddress("redis://127.0.0.1:6379");
+    
+            RedissonClient redisson  = Redisson.create(config);
+            ExecutorService e = Executors.newFixedThreadPool(32);
+            Random random = new Random();
+            for (int i = 0; i < 20000; i++) {
+                e.submit(() -> {
+                    try {
+                        String lockKey = "lock-" + random.nextInt(5);
+                        RLock lock = redisson.getLock(lockKey);
+                        log.info("before lock {}", lockKey);
+                        lock.lock();
+                        log.info("after  lock {}", lockKey);
+                        Thread.sleep(random.nextInt(20));
+                        lock.unlock();
+                        log.info("after  -unlock {}", lockKey);
+                    } catch (Exception exception){
+                        log.error("e", exception);
+                    }
+                });
+            }
+    
+            e.shutdown();
+            e.awaitTermination(10, TimeUnit.MINUTES);
+        }
+    }
+
+**Redis version**
+5.0.7 
+**Redisson version**
+ 3.16.3
+
+**Redisson configuration**
+see testcase

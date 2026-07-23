@@ -1,0 +1,62 @@
+CommandAsyncService gets blocked at high concurrency [without OutOfMemoryError] 
+Hi,
+While running a load test on jmeter of 200 users with ramp up time of 10 seconds and number of puts per user equal to 10, threads are getting  stuck. In this test we are using RTransaction and doing load testing on a single key by putting random values for a single key. 
+here is the stack trace:
+
+	at sun.misc.Unsafe.park(Native Method)
+          
+            	-  waiting on java.util.concurrent.CountDownLatch$Sync@b55ea542
+          
+            	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:186)
+          
+            	at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:847)
+          
+            	at java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly(AbstractQueuedSynchronizer.java:1008)
+          
+            	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(AbstractQueuedSynchronizer.java:1315)
+          
+            	at java.util.concurrent.CountDownLatch.await(CountDownLatch.java:242)
+          
+            	at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:152)
+          
+            	at org.redisson.RedissonObject.get(RedissonObject.java:74)
+          
+            	at org.redisson.RedissonMap.fastPut(RedissonMap.java:922)
+          
+            	at com.nucleus.controller.Controller1.sameKeyPut(Controller1.java:237)
+
+### Steps to reproduce or test case
+
+	public void sameKeyPut(){
+		
+		RTransaction transaction = redisson.createTransaction(options);
+		map=transaction.getMap("put_test");
+		map.fastPut(1, 1);
+		transaction.commit();
+		}
+### Redis version
+4.0.9
+### Redisson version
+3.7.0
+### Redisson configuration
+
+	
+		Config config = new Config();
+		config.useSingleServer().setAddress("redis://10.0.50.128:6379");
+
+		config.useSingleServer().setRetryAttempts(3);
+		config.useSingleServer().setConnectionPoolSize(500);
+		config.useSingleServer().setRetryInterval(2000);
+		config.useSingleServer().setConnectTimeout(20000);
+		redisson = (RedissonClient) Redisson.create(config);
+		
+		   
+                            TransactionOptions  options = TransactionOptions.defaults()
+				
+				.syncSlavesTimeout(5, TimeUnit.SECONDS)
+				.responseTimeout(3, TimeUnit.SECONDS)
+				.retryInterval(5, TimeUnit.SECONDS)
+				.retryAttempts(3)
+				.timeout(10, TimeUnit.SECONDS);
+		
+		

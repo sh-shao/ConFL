@@ -1,0 +1,13 @@
+Duplicated messages are sent to dead letter topic
+**To Reproduce**
+1. Consumer config: SubscriptionMode=Shared, SubscriptionName=Test1, ack Timeout=10000ms, enable Dead Letter Policy and setMaxRedeliveryCount=3
+2. Run 3 Consumers with the above config in 3 parallel threads. The consumers will not send the ACK
+3. Send a message to the topic which the consumers are listening to
+4. Because the ACK will not be sent, the message will be sent to the dead letter topic after the redelivery count is exceeded.
+
+**Expected behavior**
+Only one message is sent to dead-letters topic
+
+**Actual behavior**
+The message is sent to the dead-letters topic twice
+

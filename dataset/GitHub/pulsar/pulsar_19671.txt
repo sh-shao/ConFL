@@ -1,0 +1,37 @@
+[Bug] Java Client's Seek Logic Not Threadsafe
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+Master
+
+### Minimal reproduce step
+
+Review the usage of the `duringSeek` atomic boolean, and it is clear that if a client were to execute two concurrent seek async calls, the client would not handle the logic correctly.
+
+See:
+
+https://github.com/apache/pulsar/blob/e0b50c9ec5f12d0fb8275f235d8ac00e87a9099e/pulsar-client/src/main/java/org/apache/pulsar/client/impl/ConsumerImpl.java#L2141
+
+https://github.com/apache/pulsar/blob/e0b50c9ec5f12d0fb8275f235d8ac00e87a9099e/pulsar-client/src/main/java/org/apache/pulsar/client/impl/ConsumerImpl.java#L924-L925
+
+The first seek will likely return first and reset the subscription, but the second will silently fail.
+
+### What did you expect to see?
+
+I expect the client to either cancel the first operation or to fail the second operation due to an illegal call.
+
+### What did you see instead?
+
+Unexpected state would occur.
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

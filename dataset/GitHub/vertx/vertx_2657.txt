@@ -1,0 +1,5 @@
+Callback improvements
+Improve how callbacks are delivered to the application.
+
+- some callbacks are invoked under synchronisation which are fine most of the time but can also sometimes lead to deadlock, we should avoid this when possible
+- some callbacks invocation are delayed with a `runOnContext` operation which is not suitable when the callback notifies of a state update, e.g a close operation. Often applications use this callback to update its own state. When the callback is delayed, it can lead to an unexpected state when another event happens before the callback, e.g a websocket is closed, making it impossible to write and the application is unaware of this, the websocket close handler should be not be delayed so the developer can rely on this when writing his application

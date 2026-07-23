@@ -1,0 +1,47 @@
+ReadLock not working correctly
+Hi,
+
+Is this the expected behaviour of the ReadLock from ReadWriteLock?
+
+Clarifying because I did not encounter this in release 3.5.4
+
+There are multiple threads that are trying to lock and unlock the readlock concurrently but I am encountering the "attempt to unlock lock, not locked by current thread by node id" exception.
+
+Here is a rough code sample to replicate the issue.
+```java
+ExecutorService service;
+RReadWriteLock rwlock;
+RLock rlock = rwlock.readLock();
+
+for (int i=0; i<10; i++) {
+  service.submit (() -> {
+    for (int j=0; j<1000; j++) {
+      rlock.lock();
+      try {
+      } finally {
+         try {
+           rlock.unlock();
+         } catch(Exception e) {
+            e.printStackTrace();
+         }
+      }
+    }
+  });
+}
+```
+
+The unlock part throws the following exception even though they're all read locks.
+```java
+java.lang.IllegalMonitorStateException: attempt to unlock lock, not locked by current thread by node id: e3784ec0-94c6-4138-ac2a-1865eb79c93d thread-id: 21
+	at org.redisson.RedissonLock.unlock(RedissonLock.java:367)
+	at Main.lambda$0(Main.java:25)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Unknown Source)
+	at java.util.concurrent.FutureTask.run(Unknown Source)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+	at java.lang.Thread.run(Unknown Source)
+ ```
+  
+  
+  
+  

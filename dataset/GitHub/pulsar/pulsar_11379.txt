@@ -1,0 +1,39 @@
+Directory facing race condition on NarUnpacker
+**Describe the bug**
+This issue is an extension for #11340. When users create functions with `parallelism` larger than the number of functions-worker, the directory race condition can be observed.
+
+```
+Exception in thread "main" java.lang.reflect.InvocationTargetException
+ at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+ at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+ at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+ at java.base/java.lang.reflect.Method.invoke(Method.java:566)
+ at org.apache.pulsar.functions.instance.JavaInstanceMain.main(JavaInstanceMain.java:100)
+Caused by: java.io.IOException: Unable to delete /tmp/pulsar-nar/pulsar-java-functions-pojo-parse-1.0-SNAPSHOT.jar-unpacked/META-INF/maven
+ at org.apache.pulsar.common.nar.FileUtils.deleteFile(FileUtils.java:213)
+ at org.apache.pulsar.common.nar.FileUtils.deleteFiles(FileUtils.java:202)
+ at org.apache.pulsar.common.nar.FileUtils.deleteFile(FileUtils.java:209)
+ at org.apache.pulsar.common.nar.FileUtils.deleteFiles(FileUtils.java:202)
+ at org.apache.pulsar.common.nar.FileUtils.deleteFile(FileUtils.java:209)
+ at org.apache.pulsar.common.nar.NarUnpacker.unpackNar(NarUnpacker.java:72)
+ at org.apache.pulsar.common.nar.NarClassLoader.getFromArchive(NarClassLoader.java:159)
+ at org.apache.pulsar.functions.utils.functioncache.FunctionCacheEntry.<init>(FunctionCacheEntry.java:73)
+ at org.apache.pulsar.functions.utils.functioncache.FunctionCacheManagerImpl.registerFunctionInstanceWithArchive(FunctionCacheManagerImpl.java:129)
+ at org.apache.pulsar.functions.runtime.thread.ThreadRuntime.loadJars(ThreadRuntime.java:134)
+ at org.apache.pulsar.functions.runtime.thread.ThreadRuntime.getFunctionClassLoader(ThreadRuntime.java:119)
+ at org.apache.pulsar.functions.runtime.thread.ThreadRuntime.start(ThreadRuntime.java:165)
+ at org.apache.pulsar.functions.runtime.RuntimeSpawner.start(RuntimeSpawner.java:80)
+ at org.apache.pulsar.functions.runtime.JavaInstanceStarter.start(JavaInstanceStarter.java:232)
+ ... 5 more
+```
+
+Above exception from a single node broker + functions worker, with a sample function `parallelism=3`. The exception shows that it is unable to delete `/tmp/pulsar-nar/pulsar-java-functions-pojo-parse-1.0-SNAPSHOT.jar-unpacked/META-INF/maven`, which has already been deleted by another instance of the sample function. This exception raised my attention   and lead me to #11340.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Have a single node cluster on K8S by https://github.com/streamnative/charts, I have created a sample values file as gist and can be found [here](https://gist.github.com/freeznet/352d3a3304949c9ed3b2a00bbb77d813)
+2. build a sample function, you can take my example https://github.com/freeznet/pulsar-java-functions-pojo-parse and build with `mvn`
+3. create function with the sample package with `parallelism>1`, it is easier to reproduce with larger `parallelism`.
+4. normally you can observe the issue first with `pulsar-admin functions status` with some of the instances are not running.
+5. for some instances you can observe the above exception from the broker's log, this is because the race condition happens when multiple threads trying to delete the same file.
+6. for some instances you can observe the exception described in #11340, this is because the race condition happens when some threads deleted the extracted nar package by the extracting thread, and the extracting thread is still loading the classes.

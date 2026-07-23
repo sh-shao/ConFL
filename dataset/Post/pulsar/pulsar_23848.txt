@@ -1,0 +1,54 @@
+[Bug] Deadlock in DrainingHashesTracker due to synchronized methods
+### Search before asking
+
+- [x] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Read release policy
+
+- [x] I understand that unsupported versions don't get bug fixes. I will attempt to reproduce the issue on a supported version of Pulsar client and Pulsar broker.
+
+
+### Version
+
+Pulsar 4.0.1
+
+### Minimal reproduce step
+
+Exact steps to reproduce aren't yet confirmed.
+
+This problem was faced in a test. The problem is that there isn't a `jstack -l <PID>` thread dump of the deadlocked state. I have a heap dump, but since heap dumps don't contain exactly the same information as a thread dump about threads, it's hard to find out the exact reason why the dead lock happens. There are multiple blocked threads which indicates a dead lock:
+
+<img width="1314" alt="Image" src="https://github.com/user-attachments/assets/e0e94d2b-d61d-478a-b644-41dad2b93e65" />
+
+<img width="1153" alt="Image" src="https://github.com/user-attachments/assets/34da420d-33bb-4185-819e-96812a12910b" />
+
+<img width="1011" alt="Image" src="https://github.com/user-attachments/assets/b7d02f4e-cc0a-4de6-b943-f18ff747d94d" />
+
+<img width="1129" alt="Image" src="https://github.com/user-attachments/assets/4715666f-f498-47a4-933c-b8e6a652ed85" />
+
+<img width="1197" alt="Image" src="https://github.com/user-attachments/assets/371366a4-938e-4994-8291-ca593389618f" />
+
+<img width="1200" alt="Image" src="https://github.com/user-attachments/assets/28c78430-0a79-46ff-bd4c-c356e3538424" />
+
+<img width="1203" alt="Image" src="https://github.com/user-attachments/assets/6a0a4f9f-2541-4584-a619-0a29105c53b9" />
+
+<img width="1241" alt="Image" src="https://github.com/user-attachments/assets/f4ff8988-3d03-47e8-aa83-1263f13e530f" />
+
+<img width="1244" alt="Image" src="https://github.com/user-attachments/assets/13a3a20a-68db-4913-b502-2e3fdd5d5002" />
+
+### What did you expect to see?
+
+No dead locks.
+
+### What did you see instead?
+
+There are multiple threads in blocked state which indicates a dead lock.
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [x] I'm willing to submit a PR!

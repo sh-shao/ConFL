@@ -1,0 +1,11 @@
+SFT's BrokenStoreFileCleaner may cause data loss
+When having this BrokenStoreFileCleaner enabled, one of our customers has run into a data loss situation, probably due to a race condition between regions getting moved out of the regionserver while the BrokenStoreFileCleaner was checking this region's files eligibility for deletion. We have seen that the file got deleted by the given region server, around the same time the region got closed on this region server. I believe a race condition during region close is possible here:
+
+1) In BrokenStoreFileCleaner, for each region online on the given RS, we get the list of files in the store dirs, then iterate through it [1]; 
+2) For each file listed, we perform several checks, including this one [2] that checks if the file is "active"
+The problem is, if the region for the file we are checking got closed between point #1 and #2, by the time we check if the file is active in [2], the store may have already been closed as part of the region closure, so this check would consider the file as deletable.
+
+One simple solution is to check if the store's region is still open before proceeding with deleting the file.
+
+[1] https://github.com/apache/hbase/blob/master/hbase-server/src/main/java/org/apache/hadoop/hbase/regionserver/BrokenStoreFileCleaner.java#L99
+[2] https://github.com/apache/hbase/blob/master/hbase-server/src/main/java/org/apache/hadoop/hbase/regionserver/BrokenStoreFileCleaner.java#L133

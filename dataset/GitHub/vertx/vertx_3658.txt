@@ -1,0 +1,124 @@
+Race condition throws an unhandled exception in CompositeFuture.all
+### Version
+
+Which version(s) did you encounter this bug ?
+`3.9.2`, but this is likely in newer versions as well.
+
+### Context
+
+When at least two futures executing on different threads are passed to `CompositeFuture.all()`, there is a race condition throwing an unhandled and unexpected exception if the futures both fail at virtually the same time.
+
+The gap between this `synchronized` block in `all` method reached when a future fails
+```
+} else {
+    synchronized(composite) {
+        if (composite.isComplete()) {
+            return;
+        }
+    }
+
+    composite.fail(ar.cause());
+}
+```
+
+and the `synchronized` block in `doComplete` method 
+```
+private boolean doComplete(Object result) {
+    synchronized(this) {
+        if (this.result != null) {
+            return false;
+        }
+
+        this.result = result;
+    }
+
+    this.promise.handle(this);
+    return true;
+}
+```
+
+can create a situation where a subsequent future/thread sees that `composite.isComplete()` is false, yet making it to `doComplete` method, returning `false` after seeing `result` is not `null`.
+
+After returning from `tryFail` method, this then throws the unhandled and unexpected exception in `fail` method
+```
+public void fail(Throwable cause) {
+    if (!this.tryFail(cause)) {
+        throw new IllegalStateException("Result is already complete: " + (this.result == this ? "succeeded" : "failed"));
+    }
+}
+```
+
+### Steps to reproduce
+
+Here is a simple test with `@RunWith(VertxUnitRunner.class)` treating unhandled exceptions as unit test failures.
+
+```
+@RunWith(VertxUnitRunner.class)
+public class CompositeFutureRaceConditionTest {
+
+    private static final int NUM_ITERATIONS = 5000;
+    private static final int NUM_THREADS = 4;
+
+    @Test
+    public void testRaceConditionRepeatedly(TestContext context) throws Exception {
+        for (int i = 0; i < NUM_ITERATIONS; ++i) {
+            raceCondition(context);
+        }
+    }
+
+    private void raceCondition(TestContext context) throws Exception {
+        List<Promise> promises = IntStream.range(0, NUM_THREADS)
+                                          .mapToObj(i -> Promise.promise()).collect(Collectors.toList());
+        List<Future> futures = promises.stream().map(Promise::future).collect(Collectors.toList());
+        CompositeFuture compositeFuture = CompositeFuture.all(futures);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(NUM_THREADS);
+        CountDownLatch countDownLatch = new CountDownLatch(NUM_THREADS);
+
+        for (int i = 0; i < NUM_THREADS; ++i) {
+            final int x = i;
+            executorService.submit(() -> {
+                countDownLatch.countDown();
+                try {
+                    countDownLatch.await();
+                    System.out.println("Start fail: " + x + " | Thread: " + Thread.currentThread().getName());
+                    promises.get(x).fail("Fail " + x);
+                    System.out.println("End fail: " + x + " | Thread: " + Thread.currentThread().getName());
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                    context.fail(t.getMessage());
+                }
+            });
+        }
+
+        compositeFuture.onComplete(x -> {
+            System.out.println("CompositeFuture onComplete called: " + x);
+        });
+
+        executorService.shutdown();
+        boolean terminatedSuccessfully = executorService.awaitTermination(30, TimeUnit.SECONDS);
+        context.assertTrue(terminatedSuccessfully);
+    }
+}
+```
+
+which should throw at least one exception, depending on the number of executions.
+```
+java.lang.IllegalStateException: Result is already complete: failed
+	at io.vertx.core.impl.CompositeFutureImpl.fail(CompositeFutureImpl.java:214)
+	at io.vertx.core.impl.CompositeFutureImpl.lambda$all$0(CompositeFutureImpl.java:46)
+	at io.vertx.core.impl.FutureImpl.tryFail(FutureImpl.java:195)
+	at io.vertx.core.impl.FutureImpl.tryFail(FutureImpl.java:202)
+	at io.vertx.core.impl.FutureImpl.fail(FutureImpl.java:132)
+```
+
+### Extra
+
+``` 
+Mac OS 10.15.7
+```
+``` 
+openjdk version "11.0.6" 2020-01-14
+OpenJDK Runtime Environment AdoptOpenJDK (build 11.0.6+10)
+OpenJDK 64-Bit Server VM AdoptOpenJDK (build 11.0.6+10, mixed mode)
+```

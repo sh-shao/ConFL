@@ -1,0 +1,46 @@
+RateLimiter error during unpack on redisson 3.15.0 - bad argument #2 to 'unpack' (string expected, got nil)
+<!--
+Сonsider Redisson PRO https://redisson.pro version for advanced features and support by SLA.
+-->
+
+**Expected behavior**
+
+No error when trying to acquire a RRLimiter lock.  Error seen when multiple threads from one application try to acquire a lock from a 3 member redis cluster.  
+
+**Actual behavior**
+
+Intermittent error seen, 
+
+org.redisson.client.RedisException: ERR Error running script (call to f_d66032e767a3ea7814ca959c0a81ae0baa165f75): @user_script:1: user_script:1: bad argument #2 to 'unpack' (string expected, got nil). channel: [id: 0x72fc374b, L:/100.126.64.2:36642 - R:redis-redis-ha-server-1.redis-redis-ha.redis.svc.cluster.local/100.96.128.5:6379] command: (EVAL), params: [local rate = redis.call('hget', KEYS[1], 'rate');local interval = redis.call('hget', KEYS[1], 'inter..., 5, LTEST:INVITELIMITER, {LTEST:INVITELIMITER}:value, {LTEST:INVITELIMITER}:value:105e0f5b-ba0d-435c-aede-6d606e0646bb, {LTEST:INVITELIMITER}:permits, {LTEST:INVITELIMITER}:permits:105e0f5b-ba0d-435c-aede-6d606e0646bb, 1, 1614277776963, 8084288252659522732].
+
+
+I believe this internal script's function is the source of the problem:
+
+```
+"local expiredValues = redis.call('zrangebyscore', permitsName, 0, tonumber(ARGV[2]) - interval); "
+                     + "local released = 0; "
+                     + "for i, v in ipairs(expiredValues) do "
+                          + "local random, permits = struct.unpack('fI', v);"
+                          + "released = released + permits;"
+                     + "end; "
+```
+
+I am not so sure why v would be nil.
+
+
+
+**Steps to reproduce or test case**
+
+Not easily reproducible as of yet.
+
+**Redis version**
+
+6.0.7
+
+**Redisson version**
+
+3.15.0
+
+**Redisson configuration**
+
+3 member redis cluster with sentinel for HA, running in kubernetes 1.20.2

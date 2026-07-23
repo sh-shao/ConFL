@@ -1,0 +1,43 @@
+ArrayList concurrency error when deploying the verticles
+Hi
+
+We have an intermitent problem with the startup of our applications, in a few attempts I can reproduce so it it quite often to occur.
+
+vert.x version: 3.9.9
+Java version: openjdk version "11.0.10" 2021-01-19 LTS
+
+This is the error:
+
+java.util.ConcurrentModificationException: null
+	at java.base/java.util.ArrayList.sort(ArrayList.java:1752)
+	at io.vertx.core.impl.DeploymentManager.registerVerticleFactory(DeploymentManager.java:320)
+	at io.vertx.core.impl.VertxImpl.registerVerticleFactory(VertxImpl.java:743)
+
+This is the piece of code that is triggering the concurrency error:
+
+// Sort list in ascending order
+facts.sort((fact1, fact2) -> fact1.order() - fact2.order());
+
+class: DeploymentManager
+method: registerVerticleFactory
+
+The exception is thrown by ArrayList.sort, here is the code
+
+public void sort(Comparator<? super E> c) {
+        final int expectedModCount = modCount;
+        Arrays.sort((E[]) elementData, 0, size, c);
+        if (modCount != expectedModCount)
+            throw new ConcurrentModificationException();
+        modCount++;
+    }
+
+So from my analysis the ArrayList is being modified while it is being sorted.
+
+We have 20 verticles in this application, so we iterate over the collection of class names and invoke the method below from 
+vertex-rx-java2:3.9.9
+
+rxDeployVerticle(String name, DeploymentOptions options) 
+
+Please let me know if any additional information is required.
+
+Thanks

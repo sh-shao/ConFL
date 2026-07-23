@@ -1,0 +1,54 @@
+Duplicate primary key errors cause TaskQueue big lock to be held for way longer than it should.
+https://github.com/druid-io/druid/pull/1896 introduced an addition of https://github.com/druid-io/druid/commit/e4e5f0375b538ac7e2a2f7c36d00bd861e584c44#diff-e677e1ba7e3cf3b5b97660cfc17749beR144 which causes errors on duplicate primary key entries to be retried way more than they should.
+
+```
+2016-04-05T20:52:57,269 WARN [qtp726762476-61] com.metamx.common.RetryUtils - Failed on try 1, retrying in 1,976ms.
+org.skife.jdbi.v2.exceptions.CallbackFailedException: org.skife.jdbi.v2.exceptions.UnableToExecuteStatementException: com.mysql.jdbc.exceptions.jdbc4.MySQLIntegrityConstraintViolationException: Duplicate entry 'index_realtime_REDACTED_2016-04-05T20:00:0' for key 'PRIMARY' [statement:"INSERT INTO REDACTED (id, created_date, datasource, payload, active, status_payload) VALUES (:id, :created_date, :datasource, :payload, :active, :status_payload)", located:"INSERT INTO REDACTED (id, created_date, datasource, payload, active, status_payload) VALUES (:id, :created_date, :datasource, :payload, :active, :status_payload)", rewritten:"INSERT INTO REDACTED (id, created_date, datasource, payload, active, status_payload) VALUES (?, ?, ?, ?, ?, ?)", arguments:{ positional:{}, named:{payload:[
+...
+        at org.skife.jdbi.v2.DBI.withHandle(DBI.java:284) ~[druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.metadata.SQLMetadataConnector$2.call(SQLMetadataConnector.java:110) ~[druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.metamx.common.RetryUtils.retry(RetryUtils.java:38) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.metadata.SQLMetadataConnector.retryWithHandle(SQLMetadataConnector.java:115) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.metadata.SQLMetadataStorageActionHandler.insert(SQLMetadataStorageActionHandler.java:97) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.indexing.overlord.MetadataTaskStorage.insert(MetadataTaskStorage.java:134) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.indexing.overlord.TaskQueue.add(TaskQueue.java:321) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.indexing.overlord.http.OverlordResource$1.apply(OverlordResource.java:124) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.indexing.overlord.http.OverlordResource$1.apply(OverlordResource.java:119) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.indexing.overlord.http.OverlordResource.asLeaderWith(OverlordResource.java:518) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.indexing.overlord.http.OverlordResource.taskPost(OverlordResource.java:116) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method) ~[?:1.8.0_60]
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62) ~[?:1.8.0_60]
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[?:1.8.0_60]
+        at java.lang.reflect.Method.invoke(Method.java:497) ~[?:1.8.0_60]
+        at com.sun.jersey.spi.container.JavaMethodInvokerFactory$1.invoke(JavaMethodInvokerFactory.java:60) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.model.method.dispatch.AbstractResourceMethodDispatchProvider$ResponseOutInvoker._dispatch(AbstractResourceMethodDispatchProvider.java:205) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.model.method.dispatch.ResourceJavaMethodDispatcher.dispatch(ResourceJavaMethodDispatcher.java:75) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.uri.rules.HttpMethodRule.accept(HttpMethodRule.java:302) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.uri.rules.RightHandPathRule.accept(RightHandPathRule.java:147) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.uri.rules.ResourceClassRule.accept(ResourceClassRule.java:108) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.uri.rules.RightHandPathRule.accept(RightHandPathRule.java:147) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.uri.rules.RootResourceClassesRule.accept(RootResourceClassesRule.java:84) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.application.WebApplicationImpl._handleRequest(WebApplicationImpl.java:1542) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.application.WebApplicationImpl._handleRequest(WebApplicationImpl.java:1473) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.application.WebApplicationImpl.handleRequest(WebApplicationImpl.java:1419) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.server.impl.application.WebApplicationImpl.handleRequest(WebApplicationImpl.java:1409) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.spi.container.servlet.WebComponent.service(WebComponent.java:409) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.spi.container.servlet.ServletContainer.service(ServletContainer.java:558) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.sun.jersey.spi.container.servlet.ServletContainer.service(ServletContainer.java:733) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at javax.servlet.http.HttpServlet.service(HttpServlet.java:790) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.ServletDefinition.doServiceImpl(ServletDefinition.java:278) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.ServletDefinition.doService(ServletDefinition.java:268) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.ServletDefinition.service(ServletDefinition.java:180) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.ManagedServletPipeline.service(ManagedServletPipeline.java:93) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.FilterChainInvocation.doFilter(FilterChainInvocation.java:85) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.ManagedFilterPipeline.dispatch(ManagedFilterPipeline.java:120) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.GuiceFilter$1.call(GuiceFilter.java:132) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.GuiceFilter$1.call(GuiceFilter.java:129) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.GuiceFilter$Context.call(GuiceFilter.java:206) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at com.google.inject.servlet.GuiceFilter.doFilter(GuiceFilter.java:129) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at org.eclipse.jetty.servlet.ServletHandler$CachedChain.doFilter(ServletHandler.java:1652) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+        at io.druid.server.http.RedirectFilter.doFilter(RedirectFilter.java:71) [druid-selfcontained-0.9.0-rc3-mmx2.jar:0.9.0-rc3-mmx2]
+...
+```
+
+This retry holds onto the big lock in TaskQueue while it exhausts its attempts, causing a big backlog of things wanting to use the big lock in TaskQueue

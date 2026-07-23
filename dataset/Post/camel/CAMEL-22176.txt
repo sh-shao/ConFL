@@ -1,0 +1,55 @@
+High CPU Usage and Deadlock/Race Condition (?) in SimpleLRUCache after Upgrade (>4.8.2)
+*Summary:*
+After upgrading Apache Camel to a version greater than 4.8.2, we are experiencing significant CPU usage spikes, potential deadlocks, or race conditions. The issue appears to be related to the changes introduced in CAMEL-21888, specifically affecting the {{compressChangesIfNeeded()}} method in {{{}SimpleLRUCache{}}}.
+
+*Environment:*
+ * Apache Camel version: 4.8.x (issue persists in 4.12.0)
+
+ * Previous working version: 4.8.2
+
+ * Large file processing: thousands of files from a file input to SFTP
+
+ * Cache size: 2,000
+
+ * Files processed per run: ~1,0000
+
+*Description:*
+Following the upgrade, we observed that when processing large numbers of files (e.g., 1,000 files per run), the {{lastChanges}} queue in {{SimpleLRUCache}} fills up rapidly. For each file, the {{OperationContext}} is invoked, which clears and empties the queue. Since our workload rarely has duplicates, this results in a high number of iterations—potentially 50 million for 1,000 files and a 50,000 cache size.
+
+This behavior leads to:
+ * *High CPU usage* (sometimes reaching 100%)
+
+ * *Application startup delays or failures*
+
+ * *Potential deadlocks or race conditions* due to excessive locking or queue operations
+
+This appears to be a regression caused by the change in {{{}SimpleLRUCache.{}}}.
+
+*Steps to Reproduce:*
+ # Upgrade Camel to a version >4.8.2.
+
+ # Configure a route that processes thousands of files (e.g., from a directory to an SFTP endpoint).
+
+ # Set the cache size to a high value (e.g., 50,000).
+
+ # Observe CPU usage and application responsiveness during processing.
+
+*Expected Behavior:*
+Efficient cache management without excessive CPU usage or risk of deadlocks, even with large numbers of files and a high cache size.
+
+*Actual Behavior:*
+ * CPU usage spikes to 100% during processing.
+
+ * Application may fail to start or becomes unresponsive.
+
+ * Large number of iterations in {{compressChangesIfNeeded()}} due to the way {{lastChanges}} is managed.
+
+*Suspected Root Cause:*
+The change to use a {{Deque}} for {{lastChanges}} and the logic in {{compressChangesIfNeeded()}} is not efficient for high-throughput scenarios with large caches and frequent operations, especially when there are few or no duplicates
+
+ 
+
+*Notes*
+ * We noticed regression in two independent services after upgrading camel - both with high indication that the LRUCache is the problem.
+ * -After changing {{compressChangesIfNeeded()}} to {{noop}} the CPU usage and deadlock/race condition issues are gone-
+ 

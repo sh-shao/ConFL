@@ -1,0 +1,55 @@
+RTransaction Unusual Locking Problem
+Hi mrniko,
+
+We have two methods:
+
+1. 
+
+public void putAndWait() {
+		
+		RTransaction transaction = redisson.createTransaction(options);
+		RMap map1=transaction.getMap("put_test");
+		map1.put(1,"aryan");
+		Thread.sleep(10000);
+		transaction.commit();
+
+	}
+
+2.
+
+public void put() {
+		
+		RTransaction transaction = redisson.createTransaction(options);
+		RMap map=transaction.getMap("put_test");
+		map.put(1,"shiv");
+		transaction.commit();
+		
+	}
+
+As per our test we invoke method 1 and then immediately invoke method 2. The second transaction waits until the first one finishes and seems like the first transaction takes a pessimistic lock on one of the keys of the map being used here and we are totally fine with that.
+
+
+Now we have another method in a different test scenario:
+
+public void test(){
+		
+		RTransaction transaction1 = redisson.createTransaction(options);
+		Rmap map1 = transaction1.getMap("put_test");
+		map1.remove(1);
+
+		RTransaction transaction2 = redisson.createTransaction(options);
+		System.out.println(map1.get(1));
+		RMap map2 = transaction2.getMap("put_test");
+		map2.put(1,"aryan");
+		System.out.println(map2.get(1));
+		System.out.println(map1.get(1));
+		
+		
+		transaction2.commit();
+		transaction1.commit();
+	
+	}
+
+As per our previous test we expected a deadlock situation in this scenario, since transaction1 has the lock over the key and transaction2 is trying to alter it. But in our test both transactions commit successfully and maintain order.
+
+Please explain the ambigious locking in case of these to scenarios. Thank you.

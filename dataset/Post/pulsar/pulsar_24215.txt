@@ -1,0 +1,107 @@
+[Bug] Deadlock in HealthChecker
+### Search before asking
+
+- [x] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Read release policy
+
+- [x] I understand that unsupported versions don't get bug fixes. I will attempt to reproduce the issue on a supported version of Pulsar client and Pulsar broker.
+
+
+### Version
+
+master, issue was introduced by #24210
+
+### Minimal reproduce step
+
+ExtensibleLoadManagerImplBaseTest.cleanup reproduces this in certain cases
+
+### What did you expect to see?
+
+No deadlocks
+
+### What did you see instead?
+
+Deadlocks caused by HealthChecker
+
+```
+broker-topic-workers-OrderedExecutor-0-0 waiting to acquire [ 0x0000100008c5b118 ]
+at org.apache.pulsar.broker.service.HealthChecker.removeFromPending(HealthChecker.java)
+at org.apache.pulsar.broker.service.HealthChecker.lambda$checkHealth$1(HealthChecker.java:152)
+at org.apache.pulsar.broker.service.HealthChecker$$Lambda$3296/0x00007fd8ecf1cd00.accept(Unknown Source)
+at java.util.concurrent.CompletableFuture.uniWhenComplete(java.base@17.0.15/CompletableFuture.java:863)
+at java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(java.base@17.0.15/CompletableFuture.java:841)
+at java.util.concurrent.CompletableFuture.postComplete(java.base@17.0.15/CompletableFuture.java:510)
+at java.util.concurrent.CompletableFuture.completeExceptionally(java.base@17.0.15/CompletableFuture.java:2162)
+at org.apache.pulsar.broker.service.HealthChecker.lambda$doHealthCheck$12(HealthChecker.java:220)
+at org.apache.pulsar.broker.service.HealthChecker$$Lambda$3300/0x00007fd8ecf1d600.apply(Unknown Source)
+at java.util.concurrent.CompletableFuture.uniExceptionally(java.base@17.0.15/CompletableFuture.java:990)
+at java.util.concurrent.CompletableFuture.uniExceptionallyStage(java.base@17.0.15/CompletableFuture.java:1008)
+at java.util.concurrent.CompletableFuture.exceptionally(java.base@17.0.15/CompletableFuture.java:2364)
+at org.apache.pulsar.broker.service.HealthChecker.doHealthCheck(HealthChecker.java:219)
+at org.apache.pulsar.broker.service.HealthChecker.lambda$checkHealth$2(HealthChecker.java:163)
+at org.apache.pulsar.broker.service.HealthChecker$$Lambda$3297/0x00007fd8ecf1cf38.apply(Unknown Source)
+at java.util.concurrent.CompletableFuture$UniCompose.tryFire(java.base@17.0.15/CompletableFuture.java:1150)
+at java.util.concurrent.CompletableFuture.postComplete(java.base@17.0.15/CompletableFuture.java:510)
+at java.util.concurrent.CompletableFuture.complete(java.base@17.0.15/CompletableFuture.java:2147)
+at org.apache.pulsar.broker.service.BrokerService$2.lambda$openLedgerComplete$5(BrokerService.java:1860)
+at org.apache.pulsar.broker.service.BrokerService$2$$Lambda$1444/0x00007fd8ecaa5db0.run(Unknown Source)
+at java.util.concurrent.CompletableFuture$UniRun.tryFire(java.base@17.0.15/CompletableFuture.java:787)
+at java.util.concurrent.CompletableFuture.postComplete(java.base@17.0.15/CompletableFuture.java:510)
+at java.util.concurrent.CompletableFuture.postFire(java.base@17.0.15/CompletableFuture.java:614)
+at java.util.concurrent.CompletableFuture$UniAccept.tryFire(java.base@17.0.15/CompletableFuture.java:726)
+at java.util.concurrent.CompletableFuture$Completion.run(java.base@17.0.15/CompletableFuture.java:482)
+at org.apache.bookkeeper.common.util.SingleThreadExecutor.safeRunTask(SingleThreadExecutor.java:137)
+at org.apache.bookkeeper.common.util.SingleThreadExecutor.run(SingleThreadExecutor.java:107)
+at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+at java.lang.Thread.run(java.base@17.0.15/Thread.java:840)
+```
+
+
+```
+main awaiting notification on [ 0x0000100008d2e7f8 ] , holding [ 0x0000100008c5b118 0x00001005138bf640 ]
+at jdk.internal.misc.Unsafe.park(java.base@17.0.15/Native Method)
+at java.util.concurrent.locks.LockSupport.park(java.base@17.0.15/LockSupport.java:211)
+at java.util.concurrent.CompletableFuture$Signaller.block(java.base@17.0.15/CompletableFuture.java:1864)
+at java.util.concurrent.ForkJoinPool.unmanagedBlock(java.base@17.0.15/ForkJoinPool.java:3465)
+at java.util.concurrent.ForkJoinPool.managedBlock(java.base@17.0.15/ForkJoinPool.java:3436)
+at java.util.concurrent.CompletableFuture.waitingGet(java.base@17.0.15/CompletableFuture.java:1898)
+at java.util.concurrent.CompletableFuture.get(java.base@17.0.15/CompletableFuture.java:2072)
+at org.apache.pulsar.broker.service.HealthChecker.deleteTopic(HealthChecker.java:295)
+at org.apache.pulsar.broker.service.HealthChecker.deleteHeartbeatTopics(HealthChecker.java:289)
+at org.apache.pulsar.broker.service.HealthChecker.close(HealthChecker.java:328)
+at org.apache.pulsar.broker.PulsarService.closeAsync(PulsarService.java:501)
+at java.lang.invoke.DirectMethodHandle$Holder.invokeVirtual(java.base@17.0.15/DirectMethodHandle$Holder)
+at java.lang.invoke.LambdaForm$MH/0x00007fd8ec41c000.invoke(java.base@17.0.15/LambdaForm$MH)
+at java.lang.invoke.LambdaForm$MH/0x00007fd8ec41c400.invoke(java.base@17.0.15/LambdaForm$MH)
+at java.lang.invoke.LambdaForm$MH/0x00007fd8ec41c800.invokeExact_MT(java.base@17.0.15/LambdaForm$MH)
+at java.lang.invoke.MethodHandle.invokeWithArguments(java.base@17.0.15/MethodHandle.java:732)
+at org.mockito.internal.util.reflection.InstrumentationMemberAccessor$Dispatcher$ByteBuddy$A9pqxcoc.invokeWithArguments(Unknown Source)
+at org.mockito.internal.util.reflection.InstrumentationMemberAccessor.invoke(InstrumentationMemberAccessor.java:251)
+at org.mockito.internal.util.reflection.ModuleMemberAccessor.invoke(ModuleMemberAccessor.java:55)
+at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.tryInvoke(MockMethodAdvice.java:314)
+at org.mockito.internal.creation.bytebuddy.MockMethodAdvice$RealMethodCall.invoke(MockMethodAdvice.java:234)
+at org.mockito.internal.invocation.InterceptedInvocation.callRealMethod(InterceptedInvocation.java:142)
+at org.mockito.internal.stubbing.answers.CallsRealMethods.answer(CallsRealMethods.java:45)
+at org.mockito.Answers.answer(Answers.java:90)
+at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+at org.mockito.internal.creation.bytebuddy.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:82)
+at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:134)
+at org.apache.pulsar.broker.PulsarService.closeAsync(PulsarService.java:479)
+at org.apache.pulsar.broker.loadbalance.extensions.ExtensibleLoadManagerImplBaseTest.cleanup(ExtensibleLoadManagerImplBaseTest.java:165)
+```
+
+full thread dump: https://gist.github.com/lhotari/6edbec6d1144bab00e77ddcfb3c28ff9
+in jstack.review: https://jstack.review/?https://gist.github.com/lhotari/6edbec6d1144bab00e77ddcfb3c28ff9#tda_1_thread_0x00007fd85c9aedd0
+extracted from https://github.com/apache/pulsar/actions/runs/14660106271/job/41142485455?pr=24187
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [x] I'm willing to submit a PR!

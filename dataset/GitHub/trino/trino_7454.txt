@@ -1,0 +1,18 @@
+Join spill to disk race condition
+Join spill (from join side) operates as follows:
+1. Last join operator instance calls `io.trino.operator.PartitionedLookupSourceFactory#finishProbeOperator`.
+2. New `io.trino.operator.PartitionedConsumption` is created with `spilledPartitions`.
+3. Spilled partitions are released by join in order using `io.trino.operator.PartitionedConsumption.Partition#release`.
+4. Each `SpilledLookupSourceHandle` is disposed `io.trino.operator.SpilledLookupSourceHandle#dispose` when all joins call `PartitionedConsumption.Partition#release` on particular partition
+5. Dispose sets `io.trino.operator.SpilledLookupSourceHandle#disposeRequested`, which was also returned in `io.trino.operator.HashBuilderOperator#isBlocked`. This unblocks `HashBuilderOperator` which now can finish gracefully.
+
+Join spill (from build side) operates as follows:
+1. `io.trino.operator.HashBuilderOperator#startMemoryRevoke` is called on `HashBuilderOperator`.
+2. Revoke future finishes
+3. `HashBuilderOperator` gets blocked on `io.trino.operator.SpilledLookupSourceHandle#disposeRequested` or `unspillingRequested`.
+4. `SpilledLookupSourceHandle` is disposed when it's no longer used by join. This sets `io.trino.operator.SpilledLookupSourceHandle#disposeRequested` which unblocks `HashBuilderOperator`. `HashBuilderOperator` finishes gracefully
+
+Race condition:
+1. `io.trino.operator.PartitionedLookupSourceFactory#finishProbeOperator`. New `io.trino.operator.PartitionedConsumption` is created with `spilledPartitions`.
+2. `io.trino.operator.HashBuilderOperator#startMemoryRevoke` is called on `HashBuilderOperator`. It calls `io.trino.operator.PartitionedLookupSourceFactory#setPartitionSpilledLookupSourceHandle` which registers spilled partition in `io.trino.operator.PartitionedLookupSourceFactory#spilledPartitions`. However, `PartitionedConsumption` is already created, so newly spilled partition will never be released by join operators.
+3. `HashBuilderOperator#isBlocked` never finishes because `dispose` is never called on spilled partition.

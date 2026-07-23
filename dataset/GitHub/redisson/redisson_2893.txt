@@ -1,0 +1,73 @@
+possible concurrent issue in RedissonLock?
+When running multiple threads to acquire the lock with the same name, the below error happened from time to time.
+
+    java.util.NoSuchElementException: null
+            at java.util.LinkedHashMap$LinkedHashIterator.nextNode(LinkedHashMap.java:721)
+            at java.util.LinkedHashMap$LinkedKeyIterator.next(LinkedHashMap.java:742)
+            at org.redisson.RedissonLock$ExpirationEntry.getFirstThreadId(RedissonLock.java:87)
+            at org.redisson.RedissonLock$1.run(RedissonLock.java:279)
+            at io.netty.util.HashedWheelTimer$HashedWheelTimeout.expire(HashedWheelTimer.java:672)
+            at io.netty.util.HashedWheelTimer$HashedWheelBucket.expireTimeouts(HashedWheelTimer.java:747)
+            at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:472)
+            at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+            at java.lang.Thread.run(Thread.java:745)
+
+The usage is similar to:
+
+    RLock lock=redisson.getLock("sameName");
+    lock.lock();
+    lock.unlock();
+
+
+Not sure if we need any concurrency control in the ExpirationEntry of RedissonLock? e.g. by simply converting the threadIds to a synchronized map, the issue got fixed in our particular case. 
+
+    public class ExpirationEntry {
+        private final Map<Long, Integer> threadIds = new LinkedHashMap<>();
+        private volatile Timeout timeout;
+
+        public ExpirationEntry() {
+            super();
+        }
+    
+        public void addThreadId(long threadId) {
+            Integer counter = threadIds.get(threadId);
+            if (counter == null) {
+                counter = 1;
+            } else {
+                counter++;
+            }
+            threadIds.put(threadId, counter);
+        }
+    
+        public boolean hasNoThreads() {
+            return threadIds.isEmpty();
+        }
+    
+        public Long getFirstThreadId() {
+            if (threadIds.isEmpty()) {
+                return null;
+            }
+            return threadIds.keySet().iterator().next();
+        }
+    
+        public void removeThreadId(long threadId) {
+            Integer counter = threadIds.get(threadId);
+            if (counter == null) {
+                return;
+            }
+            counter--;
+            if (counter == 0) {
+                threadIds.remove(threadId);
+            } else {
+                threadIds.put(threadId, counter);
+            }
+        }
+    
+        public void setTimeout(Timeout timeout) {
+            this.timeout = timeout;
+        }
+    
+        public Timeout getTimeout() {
+            return timeout;
+        }
+    }

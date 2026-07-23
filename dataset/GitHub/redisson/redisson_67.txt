@@ -1,0 +1,2 @@
+RedissonList concurrency problem
+How is it ever safe to rely on `RedissonList.size()` when each invocation can technically return a different value? This would mean that calling `subList(0, size())`, or even two consecutive calls to `hasNext()` on the iterator (which is normally what happens) can potentially cause an exception.

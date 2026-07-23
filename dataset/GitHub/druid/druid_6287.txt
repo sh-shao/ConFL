@@ -1,0 +1,2 @@
+Race condition in Kafka Indexing Service
+`verifyAndMergeCheckpoints` in `KafkaSupervisor` has an issue where `Futures.addCallback(...)` may not have been completed before its results are used in `taskSequences.sort((o1, o2) -> o2.rhs.firstKey().compareTo(o1.rhs.firstKey()))`

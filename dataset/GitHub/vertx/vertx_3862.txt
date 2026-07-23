@@ -1,0 +1,4 @@
+Event bus reply failure result can be completed twice
+The reply handler result promise can be completed more than one time resulting in internal failures, this promise should be completed only once. The reply handler delivery performs a lookup on the reply handler and then schedule the message delivery on its event loop. There is a race happening when the reply timeout fires after the lookup and before the message delivery.
+
+Such failures does not have side effect and mostly pollutes logging.

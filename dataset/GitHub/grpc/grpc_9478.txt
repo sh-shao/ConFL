@@ -1,0 +1,29 @@
+should grpc pass context when process triggered by drainPendingCalls
+I want to get Context  value when stream my request body.
+There is something wrong when i get [null] value in context. 
+I believe context should be unique and accessable when request and response.
+
+Request process will use the Context.current  and response process use the context saved in  DelayedClientCall.
+
+but when request process triggered by `drainPendingCalls`
+it changed to execute delay and do not run in context we save .
+
+io.grpc.internal.DelayedClientCall#drainPendingCalls
+```java
+  for (Runnable runnable : toRun) {
+        // Must not call transport while lock is held to prevent deadlocks.
+        // TODO(ejona): exception handling
+        runnable.run();
+      }
+      toRun.clear();
+```
+
+i think it is more reasonable to use like this
+```java
+  for (Runnable runnable : toRun) {
+        // Must not call transport while lock is held to prevent deadlocks.
+        // TODO(ejona): exception handling
+       context.run( ()->{runnable.run()});
+   }
+      toRun.clear();
+```

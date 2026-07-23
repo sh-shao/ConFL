@@ -1,0 +1,41 @@
+RLock did not work
+It's very wired. I just run a very simple test case to try redisson lock. But the result is not good. 
+Can anyone show me why RLock didn't work?
+
+``` java
+//here is my codes
+        for (int k = 0; k < 10; k++)
+            new Thread() {
+                public void run() {
+                    try {
+                        Thread.sleep(1000 + new Random().nextInt(100));
+                    } catch (InterruptedException e) {
+                    }
+
+                    RedissonClient redisson = Redisson.create(config);
+                    RLock lock = redisson.getLock("anyLock");
+                    lock.lock();
+
+                    RAtomicLong atomicLong = redisson.getAtomicLong("anyAtomicLong");
+                    long i = atomicLong.get();
+                    i++;
+                    atomicLong.set(i);
+                    System.out.println("number is: " + atomicLong.get());
+
+                    lock.unlock();
+                    redisson.shutdown();
+                }
+            }.start();
+```
+
+The results are as below. It seems the lock failed completely.
+number is: 1
+number is: 2
+number is: 3
+number is: 5
+number is: 5
+number is: 6
+number is: 6
+number is: 7
+number is: 8
+number is: 8

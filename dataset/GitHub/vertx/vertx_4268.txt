@@ -1,0 +1,130 @@
+"Not yet implemented" exception when using WebClient with HTTP/2 on connection concurrency decrease
+### Version
+
+Vert.x 4.2.2 (with Quarkus 2.6.3.Final)
+
+### Context
+
+We are using a WebClient (with mutiny) for sending http2 request with following configuration:
+
+```Java
+http2Client = WebClient.create(vertx, new WebClientOptions()
+                .setSsl(true)
+                .setUseAlpn(true)
+                .setProtocolVersion(HttpVersion.HTTP_2)
+                .setDefaultHost(host)
+                .setDefaultPort(port)
+                .setHttp2MaxPoolSize(1)
+                .setHttp2KeepAliveTimeout((int) Duration.ofMinutes(30).toSeconds()));
+```
+
+Sometimes we get a `UnsupportedOperationException` with the message `Not yet implemented` when sending a request, but most times it works correctly. Probably the error has something to do with the connection getting closed?
+
+```log
+2022-02-07 19:07:51,212 ERROR [io.ver.cor.htt.imp.HttpClientRequestImpl] (vert.x-eventloop-thread-1) Not yet implemented: java.lang.UnsupportedOperationException: Not yet implemented
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool$SetConcurrency.execute(SimpleConnectionPool.java:473)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool$SetConcurrency.execute(SimpleConnectionPool.java:436)
+	at io.vertx.core.net.impl.pool.CombinerExecutor.pollAndExecute(CombinerExecutor.java:58)
+	at io.vertx.core.net.impl.pool.CombinerExecutor.submit(CombinerExecutor.java:44)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool.execute(SimpleConnectionPool.java:240)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool.setConcurrency(SimpleConnectionPool.java:482)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool.access$100(SimpleConnectionPool.java:80)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool$Slot.onConcurrencyChange(SimpleConnectionPool.java:144)
+	at io.vertx.core.http.impl.Http2ClientConnection.concurrencyChanged(Http2ClientConnection.java:122)
+	at io.vertx.core.http.impl.Http2ConnectionBase.onSettingsRead(Http2ConnectionBase.java:249)
+	at io.netty.handler.codec.http2.Http2FrameListenerDecorator.onSettingsRead(Http2FrameListenerDecorator.java:69)
+	at io.netty.handler.codec.http2.DefaultHttp2ConnectionDecoder$FrameReadListener.onSettingsRead(DefaultHttp2ConnectionDecoder.java:515)
+	at io.netty.handler.codec.http2.DefaultHttp2FrameReader.readSettingsFrame(DefaultHttp2FrameReader.java:531)
+	at io.netty.handler.codec.http2.DefaultHttp2FrameReader.processPayloadState(DefaultHttp2FrameReader.java:262)
+	at io.netty.handler.codec.http2.DefaultHttp2FrameReader.readFrame(DefaultHttp2FrameReader.java:159)
+	at io.netty.handler.codec.http2.DefaultHttp2ConnectionDecoder.decodeFrame(DefaultHttp2ConnectionDecoder.java:173)
+	at io.netty.handler.codec.http2.DecoratingHttp2ConnectionDecoder.decodeFrame(DecoratingHttp2ConnectionDecoder.java:63)
+	at io.netty.handler.codec.http2.Http2ConnectionHandler$FrameDecoder.decode(Http2ConnectionHandler.java:378)
+	at io.netty.handler.codec.http2.Http2ConnectionHandler.decode(Http2ConnectionHandler.java:438)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:507)
+	at io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:446)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.vertx.core.http.impl.VertxHttp2ConnectionHandler.channelRead(VertxHttp2ConnectionHandler.java:378)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.handler.ssl.SslHandler.unwrap(SslHandler.java:1371)
+	at io.netty.handler.ssl.SslHandler.decodeJdkCompatible(SslHandler.java:1234)
+	at io.netty.handler.ssl.SslHandler.decode(SslHandler.java:1283)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:507)
+	at io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:446)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1410)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919)
+	at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:166)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:722)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:658)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:584)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:496)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:986)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+
+2022-02-07 19:07:51,212 ERROR [com.qum.qum.pus.apn.ApnsPushNotificationService] (executor-thread-49) failed to send apns push notification: java.lang.UnsupportedOperationException: Not yet implemented
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool$SetConcurrency.execute(SimpleConnectionPool.java:473)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool$SetConcurrency.execute(SimpleConnectionPool.java:436)
+	at io.vertx.core.net.impl.pool.CombinerExecutor.pollAndExecute(CombinerExecutor.java:58)
+	at io.vertx.core.net.impl.pool.CombinerExecutor.submit(CombinerExecutor.java:44)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool.execute(SimpleConnectionPool.java:240)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool.setConcurrency(SimpleConnectionPool.java:482)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool.access$100(SimpleConnectionPool.java:80)
+	at io.vertx.core.net.impl.pool.SimpleConnectionPool$Slot.onConcurrencyChange(SimpleConnectionPool.java:144)
+	at io.vertx.core.http.impl.Http2ClientConnection.concurrencyChanged(Http2ClientConnection.java:122)
+	at io.vertx.core.http.impl.Http2ConnectionBase.onSettingsRead(Http2ConnectionBase.java:249)
+	at io.netty.handler.codec.http2.Http2FrameListenerDecorator.onSettingsRead(Http2FrameListenerDecorator.java:69)
+	at io.netty.handler.codec.http2.DefaultHttp2ConnectionDecoder$FrameReadListener.onSettingsRead(DefaultHttp2ConnectionDecoder.java:515)
+	at io.netty.handler.codec.http2.DefaultHttp2FrameReader.readSettingsFrame(DefaultHttp2FrameReader.java:531)
+	at io.netty.handler.codec.http2.DefaultHttp2FrameReader.processPayloadState(DefaultHttp2FrameReader.java:262)
+	at io.netty.handler.codec.http2.DefaultHttp2FrameReader.readFrame(DefaultHttp2FrameReader.java:159)
+	at io.netty.handler.codec.http2.DefaultHttp2ConnectionDecoder.decodeFrame(DefaultHttp2ConnectionDecoder.java:173)
+	at io.netty.handler.codec.http2.DecoratingHttp2ConnectionDecoder.decodeFrame(DecoratingHttp2ConnectionDecoder.java:63)
+	at io.netty.handler.codec.http2.Http2ConnectionHandler$FrameDecoder.decode(Http2ConnectionHandler.java:378)
+	at io.netty.handler.codec.http2.Http2ConnectionHandler.decode(Http2ConnectionHandler.java:438)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:507)
+	at io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:446)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.vertx.core.http.impl.VertxHttp2ConnectionHandler.channelRead(VertxHttp2ConnectionHandler.java:378)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.handler.ssl.SslHandler.unwrap(SslHandler.java:1371)
+	at io.netty.handler.ssl.SslHandler.decodeJdkCompatible(SslHandler.java:1234)
+	at io.netty.handler.ssl.SslHandler.decode(SslHandler.java:1283)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:507)
+	at io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:446)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1410)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919)
+	at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:166)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:722)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:658)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:584)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:496)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:986)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+
+2022-02-07 19:07:51,216 ERROR [io.ver.cor.net.imp.ConnectionBase] (vert.x-eventloop-thread-1) Not yet implemented
+2022-02-07 19:07:51,223 ERROR [io.ver.cor.htt.imp.HttpClientRequestImpl] (vert.x-eventloop-thread-0) Connection was closed: io.vertx.core.VertxException: Connection was closed
+```
+
+### Extra
+
+* Java 17

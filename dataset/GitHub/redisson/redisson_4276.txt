@@ -1,0 +1,63 @@
+JCache hangs forever when getting value from cache with `useScriptCache=true`
+**Expected behavior**
+
+Getting a value from JCache works.
+
+**Actual behavior**
+
+Since Redisson 3.17.0, the `get` operation on a cache hangs forever if `useScriptCache` is set to true. It works until 3.16.8.
+
+**Steps to reproduce or test case**
+
+```java
+public class JCacheTest extends NoTxTestCase {
+
+	private static final String CACHE_PROVIDER = JCachingProvider.class.getName();
+
+	private static final int TTL = 5000;
+	private static final int MAX_IDLE_TIME = 0;
+	private static final String ANY_CACHE = "myCache";
+	private static final String ANY_KEY = "anyKey";
+	private static final String ANY_VALUE = "anyValue";
+
+	@Inject
+	private RedissonClient redissonClient;
+
+	@Test
+	void shouldGetCacheValue() {
+		final Configuration<Object, Object> cfg = RedissonConfiguration.fromInstance(redissonClient,
+				BaseCacheConfiguration.RedisCacheConfiguration.createConfiguration(new CacheConfig(TTL, MAX_IDLE_TIME)));
+		final Cache<Object, Object> cache = createCache(ANY_CACHE, cfg);
+		cache.put(ANY_KEY, ANY_VALUE);
+
+		cache.get(ANY_KEY);
+	}
+
+	private static Cache<Object, Object> createCache(String cacheName, Configuration<Object, Object> configuration) {
+		final CachingProvider p = Caching.getCachingProvider(CACHE_PROVIDER);
+		final CacheManager cm = p.getCacheManager();
+		return cm.createCache(cacheName, configuration);
+	}
+}
+```
+
+**Redis version**
+
+4.0.10
+
+**Redisson version**
+
+3.17.0
+
+**Redisson configuration**
+
+```java
+	public RedissonClient createClient(Optional<EmbeddedRedisServer> embeddedRedisServer) {
+		final Config cfg = new Config();
+		cfg.setUseScriptCache(true);
+		cfg.useSingleServer()
+				.setAddress(this.redisAddress)
+				.setPassword(Strings.emptyToNull(redisPassword));
+		return Redisson.create(cfg);
+	}
+```

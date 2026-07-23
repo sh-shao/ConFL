@@ -1,0 +1,59 @@
+PartitionedProducerImpl flushAsync always fail
+**Describe the bug**
+Our application needs to write data to a multi-partition topic. When there is a problem with the broker and the production side cannot write, a timeout exception will occur. When this problem occurs, there is a possibility that this problem cannot be recovered from the timeout exception for a long time.
+
+According to my investigation, when `PartitionedProducerImpl` writes data, it will route the message to different partitions according to the message router. When an exception occurs, if the new data is not routed to the exception partition. All write operations will fail because every time we send 100 messages asynchronously, the  `producer.flush()` operation will be executed, which will always throw the exception that happened earlier.
+
+This is our online production log, all error logs are from the same partition and created at the same time:
+<img width="1439" alt="image" src="https://user-images.githubusercontent.com/35599757/157203294-492b5a05-a864-469d-9e04-4a97172558e9.png">
+
+
+Below is part of my application code and syncMode=false
+```
+        for (int i = 0; i < 100; i++) {
+            if (syncMode) {
+                newMessage.send();
+            } else {
+                newMessage.sendAsync();
+            }
+        }
+
+        if (!syncMode) {
+            producer.flush();
+        }
+```
+`PartitionedProducerImpl` will call the `flushAsync` method of all partitioned producers. The `ProducerImpl` that has an exception will return an abnormal `lastSendFuture`, causing the application to fail to execute.
+https://github.com/apache/pulsar/blob/master/pulsar-client%2Fsrc%2Fmain%2Fjava%2Forg%2Fapache%2Fpulsar%2Fclient%2Fimpl%2FPartitionedProducerImpl.java#L279
+```
+@Override
+    public CompletableFuture<Void> flushAsync() {
+        return CompletableFuture.allOf(
+                producers.values().stream().map(ProducerImpl::flushAsync).toArray(CompletableFuture[]::new));
+    }
+```
+
+https://github.com/apache/pulsar/blob/master/pulsar-client%2Fsrc%2Fmain%2Fjava%2Forg%2Fapache%2Fpulsar%2Fclient%2Fimpl%2FProducerImpl.java#L1978
+```
+    @Override
+    public CompletableFuture<Void> flushAsync() {
+        CompletableFuture<MessageId> lastSendFuture;
+        synchronized (ProducerImpl.this) {
+            if (isBatchMessagingEnabled()) {
+                batchMessageAndSend();
+            }
+            lastSendFuture = this.lastSendFuture; // this future has always failed
+        }
+        return lastSendFuture.thenApply(ignored -> null);
+    }
+```
+
+Here is the heap memory dumped after I reproduced, where the `lastSendFuture` of the problematic `ProducerImpl` is always in the `TimeoutException` state.
+![image](https://user-images.githubusercontent.com/35599757/157199226-8195d168-22d5-4b50-9f35-18e2a655e4d1.png)
+
+This state may be automatically restored. When the data is selected and sent to the `ProducerImpl` corresponding to the abnormal partition at a certain moment, its `lastSendFuture` is expected to be changed. But in my test environment, the automatic recovery took 9 hours, and the different applications had no control over data should be sent to the partition who has occurred the exception to help it recover. Such a long period of no automatic recovery cannot be tolerated in a production environment.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. The producer needs to write data to the multi-partition topic, and execute flush after sending 100 pieces of data asynchronously each time.
+2. Stop all brokers, and start all brokers when a timeout write exception occurs in producer side.
+3. At this point you will most likely see the producer always throwing an exception that writes to the same partition timed out

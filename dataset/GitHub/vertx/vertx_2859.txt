@@ -1,0 +1,2 @@
+HTTP server file upload leaks file descriptors when empty upload streamed to file system
+Currently the HTTP server does not close file descriptors when empty files are streamed to the file system. There is a race happening because the completion check does not pay check that the stream isn't being paused, causing the file opening to happen after the completion leading to the leak.

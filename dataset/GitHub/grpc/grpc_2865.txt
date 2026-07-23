@@ -1,0 +1,11 @@
+Rare race condition in Client
+While more prominent when using compression, this race occurs without it as well.  The typical race looks something like:
+
+1.  Client starts and RPC
+2.  The transport to the server is not yet available, so a DelayedClientTransport is used.
+3.  The server handles the RPC and sends back headers and a compressed message.
+4.  The client sees there are headers, and begins executing the queued stream callbacks, **on the channel executor threads** instead of the transport thread
+5.  The client sees the Data frame, and tries to decompress it on the network thread.  *This fails since the headers from 4 have not yet been processed.
+6.  The stream has already failed, but the queued callback for onHeaders() is finally executed on the app thread.  
+
+This is the root cause of #2157.  As mentioned, this isn't just for compression.  ClientInterceptors will see headers *after* data has been received.   The solution (temporary?) seems to be to move OkHttp to used AbstractClientStream2 in #2821, and then move decompression from ClientCallImpl to the stream.  That will fix the decompression, but not interceptors.

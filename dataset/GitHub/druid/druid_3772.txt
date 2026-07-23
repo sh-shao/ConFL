@@ -1,0 +1,4 @@
+Race condition in KafkaLookupExtractorFactory
+https://github.com/druid-io/druid/pull/3403#discussion_r88312768
+
+FYI @gvsmirnov: just creating an issue in order not to forget about it

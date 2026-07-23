@@ -1,0 +1,120 @@
+Unlock does not really unlock
+If you unlock a `FairLock` from some thread, there is a delay until all threads actually see that lock as available.
+
+Example test clase
+
+```java
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+
+import org.junit.Assert;
+import org.junit.Test;
+import org.redisson.Redisson;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+
+
+public class RedissonLockTest {
+
+    private static final String LOCK_NAME = "SOME_LOCK";
+    private static final Logger log =
+            LoggerFactory.getLogger(RedissonLockTest.class);
+
+    @Test
+    public void itDoesSomething() throws InterruptedException {
+
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+
+        Config config = new Config();
+        config.useSingleServer().setAddress("127.0.0.1:6379");
+        RedissonClient redisson = Redisson.create(config);
+
+        executorService.execute(() -> {
+            log.info("Attempting to get lock on first executor {}", Thread.currentThread().getId());
+            RLock fairLock = redisson.getFairLock(LOCK_NAME);
+            try {
+                if (fairLock.tryLock(0, TimeUnit.SECONDS)) {
+                    try {
+                        log.info("Sleeping lock holder thread");
+                        Thread.sleep(1000L);
+                    }
+                    catch (InterruptedException e) {
+                        log.error("Thread sleep interrupted", e);
+                    }
+                    log.info("Releasing lock {} from first executor", LOCK_NAME);
+                }
+                else {
+                    Assert.fail("Unable to acquire lock for some reason");
+                }
+            }
+            catch (InterruptedException e) {
+                log.error("Interrupted", e);
+            }
+            finally {
+                if (fairLock.isHeldByCurrentThread()) {
+                    fairLock.unlock();
+                }
+            }
+        });
+
+        executorService.execute(() -> {
+            try {
+                Thread.sleep(200L);
+            }
+            catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            log.info("Attempting to get lock on second executor {}",
+                     Thread.currentThread().getId());
+            RLock fairLock = redisson.getFairLock(LOCK_NAME);
+            try {
+                if (fairLock.tryLock(0, TimeUnit.SECONDS)) {
+                    log.info("Inside second block");
+                    Assert.fail("Should not be inside second block");
+                    log.info("Releasing lock {} from second executor", LOCK_NAME);
+                }
+                else {
+                    log.info("Second block could not get lock");
+                }
+            }
+            catch (InterruptedException e) {
+                log.error("Interrupted", e);
+            }
+            finally {
+                if (fairLock.isHeldByCurrentThread()) {
+                    fairLock.unlock();
+                }
+            }
+        });
+
+        executorService.awaitTermination(3L, TimeUnit.SECONDS);
+
+        log.info("Attempting to get lock again since it was unlocked");
+
+        RLock fairLock = redisson.getFairLock(LOCK_NAME);
+        try {
+            if (fairLock.tryLock(0, TimeUnit.SECONDS)) {
+                log.info("Lock successfully acquired");
+            }
+            else {
+                Assert.fail("Could not get unlocked lock " + LOCK_NAME);
+            }
+        }
+        catch (InterruptedException e) {
+            log.error("Interrupted", e);
+        }
+        finally {
+            if (fairLock.isHeldByCurrentThread()) {
+                fairLock.unlock();
+            }
+        }
+
+    }
+
+}
+```

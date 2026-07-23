@@ -1,0 +1,2 @@
+Permanent blocking calling threads
+Managed to reproduce it with retryAttempts = 0

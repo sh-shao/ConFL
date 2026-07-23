@@ -1,0 +1,57 @@
+Multiple JVMs tryLock attempt
+We have a spring application running in 3 different servers/jvms. Those services receives an event notification with an eventID.
+
+In order to avoid event processing duplication we are trying to use redis lock, to process only one event each time. We have multiple requests with same eventID coming from other services, so this is a very common scenario.
+
+The lock is centralized in one Spring Bean
+
+```
+public class RedisDistributedLock implements DistributedLock {
+
+	private static final String PREFIX = "bucketName:";
+	private static final int TIMEOUT = 1;
+
+	@Autowired
+	private RedissonClient redissonClient;
+
+	public boolean lock(String action, String lockKey) {
+		try {
+			return redissonClient.getLock( PREFIX + action + ":" + lockKey ).tryLock( 0, TIMEOUT, TimeUnit.MINUTES );
+		} catch (InterruptedException e) {
+			log.error( "Failed to lock " + lockKey + " for action " + action, e );
+			return false;
+		}
+	}
+
+	public void unlock(String action, String lockKey) {
+		redissonClient.getLock( PREFIX + action + ":" + lockKey ).unlock();
+	}
+
+}
+```
+
+Each time an event comes we first verify if we can lock
+```
+if (redisDistributedLock.lock(action,eventId))
+      eventProcessor.process("eventId")
+else
+      log.info("cant use, someone else is already processing this event")
+
+```
+
+Our redissonClient is injected by spring
+```
+
+       @Bean
+ 	public RedissonClient buildRedissonClient(@Value("${redis.url}") String url) {
+		final Config config = new Config();
+		config.useMasterSlaveServers().setMasterAddress( url );
+		//config.useSingleServer().setAddress( "redis://master:6666" );
+		return Redisson.create( config );
+	}
+
+```
+
+We also the singleServer approach (commented above). But in both scenarios events are processed twice, eventually.
+
+We don´t understand what its wrong. Can someone give us a clue?

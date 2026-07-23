@@ -1,0 +1,32 @@
+RRateLimiter drift
+Rate limit decreases over the time in highly concurrent environment.
+Demo of such drift is on screenshot. Rate there has been limited by only RRateLimiter.
+![image](https://user-images.githubusercontent.com/3984166/131498088-fdf162d5-642b-49f3-bc9e-71d795165839.png)
+
+**Expected behavior**
+Limit should not change without explicit call of setRate() with new value.
+
+**Actual behavior**
+Limit changes over hours. As a workaround I explicitly call setRate() with the same values time to time.
+
+**Steps to reproduce or test case**
+Just regular usage, nothing special:
+```
+    final long limitPerSecond = 115;
+    final RRateLimiter limiter = redisson.getRateLimiter(name);
+    limiter.setRate(RateType.OVERALL, limitPerSecond, 1000, RateIntervalUnit.MILLISECONDS);
+    // ...
+    limiter.acquire();
+```
+
+**Redis version**
+6.0.5
+
+**Redisson version**
+3.16.1
+
+**Redisson configuration**
+```
+    final Config config = new Config();
+    config.useSingleServer().setAddress(url);
+```

@@ -1,0 +1,28 @@
+org.redisson.RedissonTopic.removeAllListeners got blocked on CountDownLatch.await
+Hi there,
+
+We hit an issue in one of our server using Redission as Redis Client. We do have a single thread executor handling subscribe/unsubscribe for multiple channels. But last week, we found this got blocked on one server . Below is the thread print
+
+"pool-12-thread-1" #67 prio=5 os_prio=0 tid=0x00007f9f6c9e1000 nid=0x5091 waiting on condition [0x00007f9f6a2f6000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000006cc5406a8> (a java.util.concurrent.CountDownLatch$Sync)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly(AbstractQueuedSynchronizer.java:997)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(AbstractQueuedSynchronizer.java:1304)
+	at java.util.concurrent.CountDownLatch.await(CountDownLatch.java:231)
+	at org.redisson.pubsub.AsyncSemaphore.acquireUninterruptibly(AsyncSemaphore.java:49)
+	at org.redisson.RedissonTopic.removeAllListeners(RedissonTopic.java:89)
+
+The org.redisson.RedissonTopic.removeAllListeners is unable to respond request, and blocked in the acquireUninterruptibly FOREVER. I tried to dig into logs, there was one exception thrown before this in CommandAsyncService.syncSubscription line 125 "Subscribe timeout 9500ms". This is possibly related since this was the only "Subscribe timeout" message I saw in last 30 days logs and then this issue happened. But I still don't find prove on this. Looks like this is a rare case since we just hit once. I tried to reproduce locally but with no luck.
+
+I think the removeAllListeners should give an option to let caller pass in a timeout. But this is also not going to resolve the root cause. I am wondering if other people have observed this issue before. Please advise if you have any ideas on this, thanks.
+
+
+
+
+  
+
+
+

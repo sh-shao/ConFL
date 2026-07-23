@@ -1,0 +1,2 @@
+Support concurrent statements in JDBC
+Currently user session and so transaction id are stored `io.trino.jdbc.TrinoConnection`. So when having multiple concurrent `io.trino.jdbc.TrinoStatement` they will share same transaction id. There is also a race condition where statement can try to create a transaction where it is already one created, see: https://github.com/trinodb/trino/blob/d5b100a541245e51aa171c13d12765afe5df807a/client/trino-jdbc/src/main/java/io/trino/jdbc/TrinoStatement.java#L237

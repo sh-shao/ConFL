@@ -1,0 +1,3 @@
+JdbcConnector does not set thread context class loader properly
+`JdbcConnector`'s `ConnectorMetadata` does not set the thread context class loader to the class loader that loads the containing plugin. As a result, if a Jdbc connector depends on a library that uses the thread context class loader (e.g. `jersey-common`), the library may end up using the wrong class loader. If the class being loaded is also used in Trino (e.g. `javax.ws.rs.ext.RuntimeDelegate`), then an error similar to the one in https://github.com/trinodb/trino/issues/6902 (which also involves `jersey-common` and `javax.ws.rs.ext.RuntimeDelegate`) will occur.
+

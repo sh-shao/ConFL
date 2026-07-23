@@ -1,0 +1,5 @@
+ClientAuthInterceptor synchronizes on wrong object
+The "this" in synchronized (this), is not the correct object to synchronize on:
+https://github.com/grpc/grpc-java/blob/master/auth/src/main/java/io/grpc/auth/ClientAuthInterceptor.java#L77
+
+It should be ClientAuthInterceptor.this instead. As the code stands, there is no synchronization between threads so you can see NullPointerExceptions as lastMetadata is set but not cached.

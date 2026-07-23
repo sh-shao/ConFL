@@ -1,0 +1,66 @@
+metadata-store thread will running too long and occurs timeout of admin api when allowTopicOperation
+**Describe the bug**
+
+same issue https://github.com/apache/pulsar/issues/15324
+A clear and concise description of what the bug is.
+
+```
+"metadata-store-6-1" #76 prio=5 os_prio=0 tid=0x00007fae58004800 nid=0x2a64 waiting on condition [0x00007fae64acc000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x000000056779cfc0> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.CompletableFuture$Signaller.block(CompletableFuture.java:1693)
+	at java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3323)
+	at java.util.concurrent.CompletableFuture.waitingGet(CompletableFuture.java:1729)
+	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:1895)
+	at org.apache.pulsar.broker.authorization.AuthorizationService.allowTopicOperation(AuthorizationService.java:657)
+	at org.apache.pulsar.broker.web.PulsarWebResource.checkAuthorization(PulsarWebResource.java:831)
+	at org.apache.pulsar.broker.lookup.TopicLookupBase.lambda$lookupTopicAsync$5(TopicLookupBase.java:289)
+	at org.apache.pulsar.broker.lookup.TopicLookupBase$$Lambda$876/696424432.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniAccept(CompletableFuture.java:656)
+	at java.util.concurrent.CompletableFuture.uniAcceptStage(CompletableFuture.java:669)
+	at java.util.concurrent.CompletableFuture.thenAccept(CompletableFuture.java:1997)
+	at org.apache.pulsar.broker.lookup.TopicLookupBase.lookupTopicAsync(TopicLookupBase.java:251)
+	at org.apache.pulsar.broker.service.ServerCnx.lambda$handleLookup$4(ServerCnx.java:449)
+	at org.apache.pulsar.broker.service.ServerCnx$$Lambda$875/28142311.apply(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniApply(CompletableFuture.java:602)
+	at java.util.concurrent.CompletableFuture$UniApply.tryFire(CompletableFuture.java:577)
+	at java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:474)
+	at java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:1962)
+	at org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider.lambda$canLookupAsync$5(PulsarAuthorizationProvider.java:188)
+	at org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider$$Lambda$610/1466654548.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniWhenComplete(CompletableFuture.java:760)
+	at java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(CompletableFuture.java:736)
+	at java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:474)
+	at java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:1962)
+	at org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider.lambda$checkPermission$15(PulsarAuthorizationProvider.java:402)
+	at org.apache.pulsar.broker.authorization.PulsarAuthorizationProvider$$Lambda$606/1698032535.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniAccept(CompletableFuture.java:656)
+	at java.util.concurrent.CompletableFuture$UniAccept.tryFire(CompletableFuture.java:632)
+	at java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:474)
+	at java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:1962)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore.lambda$null$7(ZKMetadataStore.java:139)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore$$Lambda$119/1280749351.run(Unknown Source)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:748)
+```
+[10342.log](https://github.com/apache/pulsar/files/8674446/10342.log)
+
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+
+**Additional context**
+Add any other context about the problem here.
+
+broker version : 2.9
+

@@ -1,0 +1,14 @@
+Concurrency issue in listener of TCPServerBase#listen
+### Version
+
+4.1.1
+
+### Context
+
+I stumbled upon a concurrency issue while debugging `TCPServerBase` in context of #3994:
+There is a race between what's happening in that listener that is registered via `bindFuture.addListener(...)` and the code that is running directly in that `listen` method after `doBind()` is done.
+(Important: `bindFuture.addListener()` says: `The specified listener is notified when this future is done.`)
+That listener is setting the "outer" field `id` with the actual port but that field is also pre-set before that listener with port 0.
+So dependening who is faster (the listener or the outer method code), the final `sharedNetServers.put(id, this);` will either pick up the id with the actual port or the one with 0. This is even less predictable due to `id` not having `volatile` or `synchronized`.
+
+The effect while debugging was that if I waited before `sharedNetServers.put(id, this);`, I was getting another random port for each verticle (correct term?) while without debugging all got the same random port.

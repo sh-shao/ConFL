@@ -1,0 +1,7 @@
+Consumers with 0 availablePermits
+We're finding that sometimes consumers end up with 0 available permits to brokers.
+Here is information for one consumer where this si happening right now. This consumer has 0.0 rate out on partitions 4, 2, 0 and about 99 on the rest. Even so a lot of consumer of the subscription are apparently stuck with 0 availablePermits.
+They seem to also have a lot of unacked messages, but not enough to hit maxUnackedMessages and get blocked.
+[stuck-consumer.txt](https://github.com/yahoo/pulsar/files/953184/stuck-consumer.txt)
+
+Restarting clients and brokers does not seem to fix this. What could be happening?

@@ -1,0 +1,25 @@
+Bookie down causes deadlock in broker
+One of multiple bookie servers in our cluster went down due to a hardware failure. At the same time, the broker server went down. Messages that the broker could not connect to ZK were output to its log. I think this is due to a deadlock.
+
+```
+19:38:55.846 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 25 seconds
+19:38:57.846 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 23 seconds
+19:38:59.847 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 21 seconds
+19:39:01.847 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 19 seconds
+19:39:03.847 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 16 seconds
+19:39:05.847 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 14 seconds
+19:39:07.848 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 12 seconds
+19:39:09.848 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 10 seconds
+19:39:11.848 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 8 seconds
+19:39:13.849 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 6 seconds
+19:39:15.849 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 4 seconds
+19:39:17.849 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 2 seconds
+19:39:19.849 [pulsar-zk-session-watcher-5-1] WARN  o.a.p.z.ZooKeeperSessionWatcher      - zoo keeper disconnected, waiting to reconnect, time remaining = 0 seconds
+19:39:21.850 [pulsar-zk-session-watcher-5-1] ERROR o.a.p.z.ZooKeeperSessionWatcher      - timeout expired for reconnecting, invoking shutdown service
+```
+
+Below is a thread dump just before the broker shuts down.
+
+[broker_threaddump.txt](https://github.com/apache/pulsar/files/3338708/broker_threaddump.txt)
+
+This phenomenon is similar to #3566. However the Pulsar version of the broker is 2.3.2, and the previous bug should have already been fixed.

@@ -1,0 +1,82 @@
+HttpClientResponse executed on the a different context thread when resumed outside of its context
+I am trying to load the body of an HTTP request. However, in the data handler, I need to do stuff that is asynchronous. So I pause the stream at the beginning of the handler, and resume it when I'm done doing my asynchronous stuff.
+
+Pseudocode:
+
+```
+each time I receive a buffer
+    pause the response
+    asynchronously
+        do something with the buffer
+        resume the response
+```
+
+However, it's not working as I expect it to.
+
+```
+val channel = Channel<Byte>()
+
+val lock = Object()
+val INITIAL = 1
+val PAUSED = 2
+val READING = 3
+val RESUMED = 4
+
+var state = INITIAL
+
+vertxResponse.handler { buffer ->
+    synchronized(lock) {
+        if (state != INITIAL && state != RESUMED) {
+            println("Fail A")
+        }
+
+        state = PAUSED
+        vertxResponse.pause()
+    }
+
+    async(Unconfined) {
+        synchronized(lock) {
+            if (state != PAUSED) {
+                println("Fail B")
+            }
+            state = READING
+        }
+        try {
+            buffer.bytes.forEach {
+                channel.send(it)
+            }
+        } catch (t: Throwable) {
+            channel.close(t)
+        }
+
+        synchronized(lock) {
+            if (state != READING) {
+                println("Fail C")
+            }
+            state = RESUMED
+            vertxResponse.resume()
+        }
+    }
+}
+
+vertxResponse.endHandler {
+    channel.close()
+}
+
+vertxResponse.exceptionHandler {
+    channel.close(it)
+}
+
+bodyIterable = object : CancelableAsyncIterable<Byte> {
+    suspend override fun iterator(): CancelableAsyncIterator<Byte> = ChannelAsyncIterator(channel)
+}
+```
+
+Typical log:
+
+```
+Fail A
+Fail C
+```
+
+Am I getting something wrong? Is it possible my handler gets called again before it has time to pause the reading?

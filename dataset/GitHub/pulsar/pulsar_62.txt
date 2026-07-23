@@ -1,0 +1,5 @@
+SimpleDateFormat is not thread safe
+- https://github.com/yahoo/pulsar/blob/1304d4b44d/pulsar-broker/src/main/java/com/yahoo/pulsar/broker/admin/PersistentTopics.java#L105
+- https://github.com/yahoo/pulsar/blob/1304d4b44d/pulsar-broker/src/main/java/com/yahoo/pulsar/broker/service/persistent/PersistentTopic.java#L121
+- https://github.com/yahoo/pulsar/blob/1304d4b44d/pulsar-client/src/main/java/com/yahoo/pulsar/client/impl/ProducerImpl.java#L1094
+- https://github.com/yahoo/pulsar/blob/1304d4b44d/pulsar-websocket/src/main/java/com/yahoo/pulsar/websocket/ConsumerHandler.java#L195

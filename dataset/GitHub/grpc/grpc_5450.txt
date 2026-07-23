@@ -1,0 +1,10 @@
+Data race in NameResolve.Listener.onError
+`NameResolve.Listener.onError` can be called concurrently in different threads, so the following code in `onError()` impl may have data race.
+
+```
+if (haveBackends == null || haveBackends) {
+    channelLogger.log(ChannelLogLevel.WARNING, "Failed to resolve name: {0}", error);
+    haveBackends = false;
+}
+```
+

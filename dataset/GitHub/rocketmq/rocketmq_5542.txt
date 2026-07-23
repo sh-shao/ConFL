@@ -1,0 +1,8 @@
+ConsumerProcessor lockBatchMQ future allOf data race issue
+1. Please describe the issue you observed:
+
+There is a data race issue in ConsumerProcessor#lockBatchMQ.  
+
+https://github.com/apache/rocketmq/blob/0b24e875b7a8d424da0a618c892d6de79eb74343/proxy/src/main/java/org/apache/rocketmq/proxy/processor/ConsumerProcessor.java#L317-L337
+
+The result of `future0.thenAccept` should be added to `futureList` instead of future0.

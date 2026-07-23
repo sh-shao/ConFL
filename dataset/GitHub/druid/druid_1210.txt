@@ -1,0 +1,54 @@
+race condition in coordinator
+the coordniator node stopped responding (and so did the broker).
+
+The coordinator logs say 'Crazy race condition'.
+
+Druid 0.6.160
+
+logs of the coordinator:
+
+```
+
+
+2015-03-17 05:35:19,607 INFO [Master-PeonExec--0] com.metamx.emitter.core.LoggingEmitter - Event [{"feed":"alerts","timestamp":"2015-03-17T05:35:19.588Z","service":"coordinator","host":"191.237.157.96:8080","severity":"component-failure","description":"Crazy race condition! server[/druidprod/base/loadQueue/158.85.8.18:8080]","data":{"class":"io.druid.server.coordinator.LoadQueuePeon"}}]
+
+
+
+2015-03-17 05:35:19,580 ERROR [Master-PeonExec--0] io.druid.server.coordinator.LoadQueuePeon - Crazy race condition! server[/druidprod/base/loadQueue/158.85.8.18:8080]: {class=io.druid.server.coordinator.LoadQueuePeon}
+
+
+
+2015-03-17 05:35:18,594 INFO [CoordinatorLeader-0] io.druid.curator.discovery.CuratorServiceAnnouncer - Unannouncing service[DruidNode{serviceName='coordinator', host='191.237.157.96:8080', port=8080}]
+
+
+
+2015-03-17 05:35:18,554 INFO [main-EventThread] org.apache.curator.framework.state.ConnectionStateManager - State change: RECONNECTED
+
+
+
+2015-03-17 05:35:18,553 INFO [main-SendThread(104.130.162.16:2181)] org.apache.zookeeper.ClientCnxn - Session establishment complete on server 104.130.162.16/104.130.162.16:2181, sessionid = 0x24bde5fbb1f0007, negotiated timeout = 30000
+
+
+
+2015-03-17 05:35:18,541 INFO [main-SendThread(104.130.162.16:2181)] org.apache.zookeeper.ClientCnxn - Socket connection established to 104.130.162.16/104.130.162.16:2181, initiating session
+
+
+
+2015-03-17 05:35:18,532 INFO [main-SendThread(104.130.162.16:2181)] org.apache.zookeeper.ClientCnxn - Opening socket connection to server 104.130.162.16/104.130.162.16:2181. Will not attempt to authenticate using SASL (unknown error)
+
+
+
+2015-03-17 05:35:18,480 INFO [CoordinatorLeader-0] io.druid.server.coordinator.DruidCoordinator - I am no longer the leader...
+
+
+
+2015-03-17 05:35:18,472 INFO [main-EventThread] org.apache.curator.framework.state.ConnectionStateManager - State change: SUSPENDED
+
+
+
+2015-03-17 05:35:18,356 INFO [main-SendThread(104.130.16.203:2181)] org.apache.zookeeper.ClientCnxn - Client session timed out, have not heard from server in 20008ms for sessionid 0x24bde5fbb1f0007, closing socket connection and attempting reconnect
+
+
+
+2015-03-17 05:35:07,878 INFO [Coordinator-Exec--0] com.metamx.emitter.core.LoggingEmitter - Event [{"feed":"metrics","timestamp":"2015-03-17T05:35:07.878Z","service":"coordinator","host":"191.237.157.96:8080","metric":"coordinator/segment/count","value":2852,"user1":"d
+```

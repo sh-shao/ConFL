@@ -1,0 +1,32 @@
+Non-persistent topic's replication has a deadlock
+NonPersistentReplicator disable batching. If there is batch message,producer will acquire one,but release num in message's meta when process ack.
+
+```
+                    // When publishing during replication, we need to set the correct number of message in batch
+                    // This is only used in tracking the publish rate stats
+                    int numMessages = msg.getMessageBuilder().hasNumMessagesInBatch()
+                            ? msg.getMessageBuilder().getNumMessagesInBatch()
+                            : 1;
+                    ByteBufPair cmd = sendMessage(producerId, sequenceId, numMessages, msgMetadata, encryptedPayload);
+                    msgMetadataBuilder.recycle();
+                    msgMetadata.recycle();
+
+                    final OpSendMsg op = OpSendMsg.create(msg, cmd, sequenceId, callback);
+                    op.setNumMessagesInBatch(numMessages);
+                    op.setBatchSizeByte(encryptedPayload.readableBytes());
+                    pendingMessages.put(op);
+                    lastSendFuture = callback.getFuture();
+
+
+```
+So the ProducerImpl's semaphore  no longer has any effect,  the ProducerImpl's sendAsync method maybe  blocked in pendingMessages's put method .
+
+There may be a deadlock between ackReceived  and sendAsync .
+
+The deadlock  is   between  pulsar-io-22-8  and pulsar-io-22-12 in jstack log.
+
+[broker jstack log](https://github.com/apache/pulsar/files/3818922/broker.txt)
+
+
+
+

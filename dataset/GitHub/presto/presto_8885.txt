@@ -1,0 +1,7 @@
+ORC block-level stats cause synchronization bottleneck
+When benchmarking 0.179-t, we found that https://github.com/prestodb/presto/commit/d3908cee5743adab260b4fa994a336bd80de3263 (in particular https://github.com/prestodb/presto/commit/d3908cee5743adab260b4fa994a336bd80de3263#diff-2b8d282443413bc8705275c23f4106dcR251) causes a performance slowdown on read-intensive queries. Writing out the block-level stats was taking up 40% of the CPU of TPC-H q14 (as seen by YourKit), because the FileFormatDataSourceStats it was using is globally synchronized across 16 drivers. Reverting this commit improved the query runtime of q14 on 1TB from 24s to 22s on an internal test environment, back to the same query runtime as 0.167-t.
+
+Teradata doesn't have any modifications in this area, so it seems likely the same issue exists on prestodb/master.
+
+Are these stats necessary? If they are, is there a way to avoid saving them synchronously?
+cc @highker 

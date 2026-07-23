@@ -1,0 +1,8 @@
+Connection window should auto-refill
+Consider an application with 2 streams, A and B. A receives a stream of messages and the application pops off one message at a time and makes a request on stream B. However, if receiving of data on A has caused the connection window to collapse, B will not be able to receive any data and the application will deadlock. The only way (currently) to get around this is to use multiple connections for the streams, which would needlessly complicate the application code.
+
+The C implementation already solves the problem by auto-refilling the connection window, so Java and the other languages should just follow suit here.
+
+Created PR https://github.com/netty/netty/pull/4423 in Netty to support configuring the local flow controller to auto-refill.  Until that's in, we should probably just set the connection window to MAX_INT for now.
+
+@louiscryan @ejona86 @ctiller @a11r 

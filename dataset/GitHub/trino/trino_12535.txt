@@ -1,0 +1,69 @@
+Adding column in SQL Server connector sometimes fails even though column has been added successfully
+On SQLServer:
+
+```
+Error:  io.trino.plugin.sqlserver.TestSqlServerConnectorTest.testAddColumnConcurrently  Time elapsed: 1.245 s  <<< FAILURE!
+java.lang.AssertionError: Unexpected concurrent add column failure
+	at io.trino.testing.BaseConnectorTest.verifyConcurrentAddColumnFailurePermissible(BaseConnectorTest.java:2912)
+	at io.trino.testing.BaseConnectorTest.lambda$testAddColumnConcurrently$25(BaseConnectorTest.java:2877)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628)
+	at java.base/java.lang.Thread.run(Thread.java:829)
+	Suppressed: java.lang.RuntimeException: Transaction (Process ID 53) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.
+		at io.trino.testing.AbstractTestingTrinoClient.execute(AbstractTestingTrinoClient.java:122)
+		at io.trino.testing.AbstractTestingTrinoClient.execute(AbstractTestingTrinoClient.java:86)
+		at io.trino.testing.DistributedQueryRunner.execute(DistributedQueryRunner.java:514)
+		at io.trino.testing.BaseConnectorTest.lambda$testAddColumnConcurrently$25(BaseConnectorTest.java:2871)
+		... 4 more
+	Caused by: io.trino.spi.TrinoException: Transaction (Process ID 53) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.
+		at io.trino.plugin.jdbc.BaseJdbcClient.getColumns(BaseJdbcClient.java:283)
+		at io.trino.plugin.jdbc.ForwardingJdbcClient.getColumns(ForwardingJdbcClient.java:90)
+		at io.trino.plugin.jdbc.jmx.StatisticsAwareJdbcClient.lambda$getColumns$4(StatisticsAwareJdbcClient.java:110)
+		at io.trino.plugin.jdbc.jmx.JdbcApiStats.wrap(JdbcApiStats.java:35)
+		at io.trino.plugin.jdbc.jmx.StatisticsAwareJdbcClient.getColumns(StatisticsAwareJdbcClient.java:110)
+		at io.trino.plugin.jdbc.CachingJdbcClient.lambda$getColumns$3(CachingJdbcClient.java:161)
+		at io.trino.collect.cache.EmptyCache.get(EmptyCache.java:66)
+		at io.trino.plugin.jdbc.CachingJdbcClient.get(CachingJdbcClient.java:700)
+		at io.trino.plugin.jdbc.CachingJdbcClient.getColumns(CachingJdbcClient.java:161)
+		at io.trino.plugin.jdbc.CachingJdbcClient.lambda$getColumns$3(CachingJdbcClient.java:161)
+		at com.google.common.cache.LocalCache$LocalManualCache$1.load(LocalCache.java:4868)
+		at com.google.common.cache.LocalCache$LoadingValueReference.loadFuture(LocalCache.java:3533)
+		at com.google.common.cache.LocalCache$Segment.loadSync(LocalCache.java:2282)
+		at com.google.common.cache.LocalCache$Segment.lockedGetOrLoad(LocalCache.java:2159)
+		at com.google.common.cache.LocalCache$Segment.get(LocalCache.java:2049)
+		at com.google.common.cache.LocalCache.get(LocalCache.java:3966)
+		at com.google.common.cache.LocalCache$LocalManualCache.get(LocalCache.java:4863)
+		at io.trino.collect.cache.EvictableCache.get(EvictableCache.java:108)
+		at io.trino.plugin.jdbc.CachingJdbcClient.get(CachingJdbcClient.java:700)
+		at io.trino.plugin.jdbc.CachingJdbcClient.getColumns(CachingJdbcClient.java:161)
+		at io.trino.plugin.jdbc.DefaultJdbcMetadata.getColumnHandles(DefaultJdbcMetadata.java:625)
+		at io.trino.plugin.base.classloader.ClassLoaderSafeConnectorMetadata.getColumnHandles(ClassLoaderSafeConnectorMetadata.java:288)
+		at io.trino.metadata.MetadataManager.getColumnHandles(MetadataManager.java:485)
+		at io.trino.execution.AddColumnTask.execute(AddColumnTask.java:97)
+		at io.trino.execution.AddColumnTask.execute(AddColumnTask.java:55)
+		at io.trino.execution.DataDefinitionExecution.start(DataDefinitionExecution.java:145)
+		at io.trino.execution.SqlQueryManager.createQuery(SqlQueryManager.java:243)
+		at io.trino.dispatcher.LocalDispatchQuery.lambda$startExecution$7(LocalDispatchQuery.java:143)
+		at io.trino.$gen.Trino_testversion____20220524_132750_5.run(Unknown Source)
+		at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128)
+		at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628)
+		at java.base/java.lang.Thread.run(Thread.java:829)
+	Caused by: com.microsoft.sqlserver.jdbc.SQLServerException: Transaction (Process ID 53) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.
+		at com.microsoft.sqlserver.jdbc.SQLServerException.makeFromDatabaseError(SQLServerException.java:265)
+		at com.microsoft.sqlserver.jdbc.SQLServerStatement.getNextResult(SQLServerStatement.java:1676)
+		at com.microsoft.sqlserver.jdbc.SQLServerPreparedStatement.doExecutePreparedStatement(SQLServerPreparedStatement.java:615)
+		at com.microsoft.sqlserver.jdbc.SQLServerPreparedStatement$PrepStmtExecCmd.doExecute(SQLServerPreparedStatement.java:537)
+		at com.microsoft.sqlserver.jdbc.TDSCommand.execute(IOBuffer.java:7785)
+		at com.microsoft.sqlserver.jdbc.SQLServerConnection.executeCommand(SQLServerConnection.java:3793)
+		at com.microsoft.sqlserver.jdbc.SQLServerStatement.executeCommand(SQLServerStatement.java:268)
+		at com.microsoft.sqlserver.jdbc.SQLServerStatement.executeStatement(SQLServerStatement.java:242)
+		at com.microsoft.sqlserver.jdbc.SQLServerPreparedStatement.executeQuery(SQLServerPreparedStatement.java:456)
+		at com.microsoft.sqlserver.jdbc.SQLServerDatabaseMetaData.getColumns(SQLServerDatabaseMetaData.java:665)
+		at io.trino.plugin.jdbc.BaseJdbcClient.getColumns(BaseJdbcClient.java:301)
+		at io.trino.plugin.jdbc.BaseJdbcClient.getColumns(BaseJdbcClient.java:235)
+		... 31 more
+Caused by: [CIRCULAR REFERENCE: io.trino.spi.TrinoException: Transaction (Process ID 53) was deadlocked on lock resources with another process and has been chosen as the deadlock victim. Rerun the transaction.]
+```
+
+https://github.com/trinodb/trino/runs/6572998375?check_suite_focus=true

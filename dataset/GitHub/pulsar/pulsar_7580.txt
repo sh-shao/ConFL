@@ -1,0 +1,15 @@
+[Java] [v2.5.2] CompletableFuture<Messages<T>> from batchReceiveAsync not completed exceptionnally when closing Consumer
+**Describe the bug**
+`CompletableFuture<Messages<T>>` from `Consumer.batchReceiveAsync()` not completed exceptionnally when closing `Consumer`.
+
+**To Reproduce**
+Thread A build a `Consumer<T> consumer`
+Thread B request `consumer.batchReceiveAsync().get()`
+Thread A call `consumer.close()`
+Thread B is still blocked
+
+**Expected behavior**
+The behavior should be consistent with `consumer.receiveAsync().get()` and complete exceptionnally when closing `Consumer`.
+
+**Desktop (please complete the following information):**
+Ubuntu 18.04 LTS, Java OpenJDK 11, Pulsar 2.5.2.

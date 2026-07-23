@@ -1,0 +1,37 @@
+Race condition in PersistentTopic#addReplicationCluster
+**Describe the bug**
+In class `org.apache.pulsar.broker.service.persistent.PersistentTopic`, we have field `replicators` of class ConcurrentOpenHashMap. There is a race condiftion in method addReplicationCluster.
+```
+replicators.computeIfAbsent(remoteCluster, r -> {
+    try {
+        return new PersistentReplicator(PersistentTopic.this, cursor, localCluster,
+                remoteCluster, brokerService, (PulsarClientImpl) replicationClient);
+    } catch (PulsarServerException e) {
+        log.error("[{}] Replicator startup failed {}", topic, remoteCluster, e);
+    }
+    return null;
+});
+
+// clean up replicator if startup is failed
+if (replicators.containsKey(remoteCluster) && replicators.get(remoteCluster) == null) {
+    replicators.remove(remoteCluster);
+}
+```
+
+It's clear that there is a race condition if multi threads would run in this code. For example
+Thread A is just about to execute `replicators.remove`, Thread B inserts a non-null PersistentReplicator. Then thread A will delete the PersistentReplicator which thread B just created.
+
+And there is no other thread safe measures applied to these code.
+
+**Expected behavior**
+
+It should be thead safe.
+
+**Screenshots**
+Not applicable.
+
+**Desktop (please complete the following information):**
+ - OS: mac
+
+**Additional context**
+Nop

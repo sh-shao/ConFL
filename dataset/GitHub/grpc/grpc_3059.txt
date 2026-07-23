@@ -1,0 +1,6 @@
+ServerStreamListenerImpl closing ServerStream in unsafe way
+This is not an actual problem because of the way stubs are implemented today, but the code can potentially allow the below to happen:
+ServerStreamListenerImpl is executing in the network thread (in the case of the direct executor) or in a application thread (via JumpToApplicationThreadServerStreamListener in the case of an application thread pool). ServerStreamListenerImpl.messageRead can detect an inconsistent gRPC protocol state, and close the ServerStream. This is a problem because the user application responsible for sending data (a different application thread from the JumpToApplicationThreadServerStreamListener) can be in the middle of working with the stream.
+
+
+A possible fix is to treat this particular invalid gRPC protocol state as a special case, because for clientSendsOne methods, we can require the client to halfClose before we trigger the application code. This allows us to detect the problem in the stub before the application gets triggered, and we avoid any synchronization concerns. We should investigate further into other inconsistent states we want to detect, and make sure this strategy of moving it to the stub also works.

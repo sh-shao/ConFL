@@ -1,0 +1,1 @@
+tryLockAsync and lockAsync methods of RedissonMultiLock object get hang

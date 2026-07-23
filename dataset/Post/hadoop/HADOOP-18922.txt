@@ -1,0 +1,60 @@
+Race condition in ZKDelegationTokenSecretManager creating znode
+When multiple nodes come up at the same time, there is a race condition in ZKDelegationTokenSecretManager since the exists and create check do not mean that the znode was created in the meantime. HADOOP-18452 tried to fix this but the issue still exists.
+
+A better fix would be to catch the https://zookeeper.apache.org/doc/r3.9.0/apidocs/zookeeper-server/org/apache/zookeeper/KeeperException.NodeExistsException.html if the create fails when the znode already exists. This would eliminate the race condition.
+
+{code:java}
+236 ERROR (jetty-launcher-8-thread-1) [n:127.0.0.1:56203_solr] o.a.s.s.CoreContainerProvider Could not start Solr. Check solr/home property and the logs
+          => java.lang.RuntimeException: Could not start class org.apache.hadoop.security.token.delegation.web.DelegationTokenManager$ZKSecretManager: java.io.IOException: Could not create namespace
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenManager.init(DelegationTokenManager.java:149)
+java.lang.RuntimeException: Could not start class org.apache.hadoop.security.token.delegation.web.DelegationTokenManager$ZKSecretManager: java.io.IOException: Could not create namespace
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenManager.init(DelegationTokenManager.java:149) ~[hadoop-common-3.3.6.jar:?]
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenAuthenticationHandler.initTokenManager(DelegationTokenAuthenticationHandler.java:163) ~[hadoop-common-3.3.6.jar:?]
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenAuthenticationHandler.init(DelegationTokenAuthenticationHandler.java:131) ~[hadoop-common-3.3.6.jar:?]
+	at org.apache.hadoop.security.authentication.server.AuthenticationFilter.initializeAuthHandler(AuthenticationFilter.java:194) ~[hadoop-auth-3.3.6.jar:?]
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenAuthenticationFilter.initializeAuthHandler(DelegationTokenAuthenticationFilter.java:215) ~[hadoop-common-3.3.6.jar:?]
+	at org.apache.solr.security.hadoop.HadoopAuthFilter.initializeAuthHandler(HadoopAuthFilter.java:124) ~[main/:?]
+	at org.apache.hadoop.security.authentication.server.AuthenticationFilter.init(AuthenticationFilter.java:180) ~[hadoop-auth-3.3.6.jar:?]
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenAuthenticationFilter.init(DelegationTokenAuthenticationFilter.java:181) ~[hadoop-common-3.3.6.jar:?]
+	at org.apache.solr.security.hadoop.HadoopAuthFilter.init(HadoopAuthFilter.java:75) ~[main/:?]
+	at org.apache.solr.security.hadoop.HadoopAuthPlugin.init(HadoopAuthPlugin.java:135) ~[main/:?]
+	at org.apache.solr.core.CoreContainer.initializeAuthenticationPlugin(CoreContainer.java:569) ~[solr-core-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.core.CoreContainer.reloadSecurityProperties(CoreContainer.java:1185) ~[solr-core-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.core.CoreContainer.loadInternal(CoreContainer.java:854) ~[solr-core-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.core.CoreContainer.load(CoreContainer.java:763) ~[solr-core-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.servlet.CoreContainerProvider.createCoreContainer(CoreContainerProvider.java:427) ~[solr-core-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.servlet.CoreContainerProvider.init(CoreContainerProvider.java:246) [solr-core-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.embedded.JettySolrRunner$1.lifeCycleStarted(JettySolrRunner.java:405) [solr-test-framework-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.eclipse.jetty.util.component.AbstractLifeCycle.setStarted(AbstractLifeCycle.java:253) [jetty-util-10.0.16.jar:10.0.16]
+	at org.eclipse.jetty.util.component.AbstractLifeCycle.start(AbstractLifeCycle.java:94) [jetty-util-10.0.16.jar:10.0.16]
+	at org.apache.solr.embedded.JettySolrRunner.retryOnPortBindFailure(JettySolrRunner.java:614) [solr-test-framework-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.embedded.JettySolrRunner.start(JettySolrRunner.java:552) [solr-test-framework-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.embedded.JettySolrRunner.start(JettySolrRunner.java:523) [solr-test-framework-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.cloud.MiniSolrCloudCluster.startJettySolrRunner(MiniSolrCloudCluster.java:508) [solr-test-framework-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at org.apache.solr.cloud.MiniSolrCloudCluster.lambda$new$0(MiniSolrCloudCluster.java:320) [solr-test-framework-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at java.util.concurrent.FutureTask.run(FutureTask.java:264) [?:?]
+	at org.apache.solr.common.util.ExecutorUtil$MDCAwareThreadPoolExecutor.lambda$execute$0(ExecutorUtil.java:294) [solr-solrj-10.0.0-SNAPSHOT.jar:10.0.0-SNAPSHOT a3945a2c3710b1a355abdea7a2e63b5353ad0723 [snapshot build, details omitted]]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136) [?:?]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635) [?:?]
+	at java.lang.Thread.run(Thread.java:833) [?:?]
+Caused by: java.io.IOException: Could not create namespace
+	at org.apache.hadoop.security.token.delegation.ZKDelegationTokenSecretManager.startThreads(ZKDelegationTokenSecretManager.java:275) ~[hadoop-common-3.3.6.jar:?]
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenManager.init(DelegationTokenManager.java:146) ~[hadoop-common-3.3.6.jar:?]
+	... 28 more
+Caused by: org.apache.zookeeper.KeeperException$NodeExistsException: KeeperErrorCode = NodeExists for /solr/security/zkdtsm/ZKDTSMRoot
+	at org.apache.zookeeper.KeeperException.create(KeeperException.java:125) ~[zookeeper-3.9.0.jar:3.9.0]
+	at org.apache.zookeeper.KeeperException.create(KeeperException.java:53) ~[zookeeper-3.9.0.jar:3.9.0]
+	at org.apache.zookeeper.ZooKeeper.create(ZooKeeper.java:1450) ~[zookeeper-3.9.0.jar:3.9.0]
+	at org.apache.curator.framework.imps.CreateBuilderImpl$18.call(CreateBuilderImpl.java:1223) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.curator.framework.imps.CreateBuilderImpl$18.call(CreateBuilderImpl.java:1193) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.curator.RetryLoop.callWithRetry(RetryLoop.java:93) ~[curator-client-5.2.0.jar:?]
+	at org.apache.curator.framework.imps.CreateBuilderImpl.pathInForeground(CreateBuilderImpl.java:1190) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.curator.framework.imps.CreateBuilderImpl.protectedPathInForeground(CreateBuilderImpl.java:605) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.curator.framework.imps.CreateBuilderImpl.forPath(CreateBuilderImpl.java:595) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.curator.framework.imps.CreateBuilderImpl.forPath(CreateBuilderImpl.java:573) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.curator.framework.imps.CreateBuilderImpl$4.forPath(CreateBuilderImpl.java:461) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.curator.framework.imps.CreateBuilderImpl$4.forPath(CreateBuilderImpl.java:391) ~[curator-framework-5.2.0.jar:5.2.0]
+	at org.apache.hadoop.security.token.delegation.ZKDelegationTokenSecretManager.startThreads(ZKDelegationTokenSecretManager.java:272) ~[hadoop-common-3.3.6.jar:?]
+	at org.apache.hadoop.security.token.delegation.web.DelegationTokenManager.init(DelegationTokenManager.java:146) ~[hadoop-common-3.3.6.jar:?]
+	... 28 more
+{code}

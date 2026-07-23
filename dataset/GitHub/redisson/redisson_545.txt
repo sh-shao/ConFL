@@ -1,0 +1,41 @@
+RedissonLock.isHeldByCurrentThread() doesn't check properly.
+I am using RedissonLock in my system.
+The lock realted logic in service is like this:
+
+```
+    public boolean tryLock(String key, long time, TimeUnit unit) {
+        RLock lock = redissonClient.getLock(key);
+        try {
+            if(lock.tryLock(time, lockExpireSecond, unit)) {
+                LOG.debug("Got lock for:{}", key);
+                return true;
+            } else {
+                LOG.debug("Can not get lock for:{}", key);
+                return false;
+            }
+        } catch (InterruptedException e) {
+            LOG.error(e.getMessage(), e);
+            return false;
+        }
+    }
+
+    public void unlock(String key) {
+        RLock lock = redissonClient.getLock(key);
+        if (lock.isHeldByCurrentThread()) {
+            LOG.debug("Unlock for:{}", key);
+            lock.unlock();
+        } else {
+            LOG.debug("Not hold lock for:{}", key);
+        }
+    }
+```
+
+But in the log I found:
+
+```
+2016-07-04 15:15:39,533 DEBUG [http-nio-18090-exec-2] OrderService: Got lock for:ticket.lock.order.86
+2016-07-04 15:15:39,541 DEBUG [http-nio-18090-exec-2] OrderService: Not hold lock for:ticket.lock.order.86
+```
+
+I can see the the thread name is same, so the thread got the lock and the thread try to unlock is same thread.  
+Is there any problem in my code? Or in the logic of `lock.isHeldByCurrentThread()` ?

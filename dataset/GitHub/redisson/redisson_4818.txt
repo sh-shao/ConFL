@@ -1,0 +1,25 @@
+Single RLock  instance can acquire lock with previous leaseTime when leaseTime is not specified
+**Expected behavior**
+
+When using single RLock instance for acquiring and releasing lock multiple times lock is always aqcuired  with expected lease time or without it if not specified. Previous lock acquisitions do not affect subsequent.   
+
+**Actual behavior**
+
+Suppose we use single RLock instance and acquire lock with leaseTime, then unlock it. After this we acquire lock with same instance but without leaseTime. In this case RLock uses previous leaseTime saved in `internalLockLeaseTime` variable and creates Redis key with it. Then it starts renewal and eventually sets TTL to lock watchdog timeout. But if app failed immediately  after acquiring lock, key stays in Redis with TTL from previous acquisition.
+
+**Steps to reproduce or test case**
+```java
+RedissonClient redisson = Redisson.create(config);
+RLock lock = redisson.getLock("test-lock:1");
+lock.lock(1, TimeUnit.HOURS);
+lock.unlock();
+lock.lock();
+System.out.println(lock.remainTimeToLive()); // prints value close to 1 hour
+System.exit(0);
+```
+**Redis version**
+5.0.7
+**Redisson version**
+3.19.1
+**Redisson configuration**
+Sentinel or local

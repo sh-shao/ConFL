@@ -1,0 +1,2 @@
+CompositeFuture concurrent races
+The implementation of `CompositeFuture#all`, `CompositeFuture#any` and `CompositeFuture#join` has races leading to throwing an exception to the caller when it should not. Those races don't affect the correctness of the future outcome.

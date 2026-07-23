@@ -1,0 +1,63 @@
+[Proxy] Race condition in Pulsar Proxy that causes UnsupportedOperationExceptions in Proxy logs
+**Describe the bug**
+
+It is common that UnsupportedOperationExceptions appear on the Proxy logs. This particular issue was reproduced very often when Geo-replication was configured between 2 clusters.
+```
+16:57:50.305 [pulsar-proxy-io-2-3] INFO  org.apache.pulsar.proxy.server.ProxyConnection - [/10.34.1.169:47600] New connection opened
+16:57:50.329 [pulsar-proxy-io-2-3] INFO  org.apache.pulsar.proxy.server.ProxyConnection - [/10.34.1.169:47600] complete connection, init proxy handler. authenticated with token role superuser, hasProxyToBrokerUrl: false
+16:57:50.331 [pulsar-proxy-io-2-3] WARN  io.netty.channel.DefaultChannelPipeline - An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception.
+java.lang.UnsupportedOperationException: null
+        at org.apache.pulsar.common.protocol.PulsarDecoder.handleProducer(PulsarDecoder.java:479)
+        at org.apache.pulsar.common.protocol.PulsarDecoder.channelRead(PulsarDecoder.java:193)
+        at org.apache.pulsar.proxy.server.ProxyConnection.channelRead(ProxyConnection.java:193)
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fina
+l]
+        at io.netty.handler.codec.ByteToMessageDecoder.fireChannelRead(ByteToMessageDecoder.java:324) [io.netty-netty-codec-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:296) [io.netty-netty-codec-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fina
+l]
+        at io.netty.handler.ssl.SslHandler.unwrap(SslHandler.java:1371) [io.netty-netty-handler-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.handler.ssl.SslHandler.decodeNonJdkCompatible(SslHandler.java:1245) [io.netty-netty-handler-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.handler.ssl.SslHandler.decode(SslHandler.java:1285) [io.netty-netty-handler-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:507) [io.netty-netty-codec-4.1.72.Final.jar:4.1.72.Final
+]
+        at io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:446) [io.netty-netty-codec-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276) [io.netty-netty-codec-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fina
+l]
+        at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1410) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Fi
+nal]
+        at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.channel.epoll.AbstractEpollStreamChannel$EpollStreamUnsafe.epollInReady(AbstractEpollStreamChannel.java:795) [io.netty-netty-transport-classes-epoll
+-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.channel.epoll.EpollEventLoop.processReady(EpollEventLoop.java:480) [io.netty-netty-transport-classes-epoll-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.channel.epoll.EpollEventLoop.run(EpollEventLoop.java:378) [io.netty-netty-transport-classes-epoll-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:986) [io.netty-netty-common-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) [io.netty-netty-common-4.1.72.Final.jar:4.1.72.Final]
+        at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) [io.netty-netty-common-4.1.72.Final.jar:4.1.72.Final]
+        at java.lang.Thread.run(Thread.java:829) [?:?]
+```
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Setup 2 Pulsar clusters and enable geo-replication in a namespace that is shared across the clusters.
+2. Create a topic with 200 partitions in the replicated namespace.
+3. Restart all brokers in one cluster to get the geo-replication connections to re-initialize untill you have reproduced the issue in the Pulsar Proxy logs.
+
+**Expected behavior**
+The race conditions should be handled in Pulsar Proxy

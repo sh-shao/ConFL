@@ -1,0 +1,92 @@
+binder: Deadlock due to unexpected re-entrancy of transactions on process-local Binder
+BinderTransport locking was written under the assumption that calls to `IBinder#transact()` enqueued the Parcel for delivery to the peer and returned immediately. However, Android guarantees the unique object identity of IBinder instances within a process. And so when a client creates a Channel to a Server/Service within its own process, `BinderClientTransport.outgoingBinder == BinderServerTransport.outgoingBinder`. `android.os.Binder#transact()` on that object is implemented not as a system call to the binder driver but as a direct call to its own onTransact() method.
+
+This is a problem because `BinderTransport#handleTransaction()` holds its 'this' lock while calling `outgoingBinder.transact()` in multiple places. If two peer instances of `BinderClientTransport` and `BinderServerTransport` are running `handleTransaction()` on different threads at the same time, they can each end up holding their own lock while waiting (forever) for the other's.
+
+### Steps to reproduce one instance of this bug
+- Use `BinderChannelBuilder` to create a Channel to an `android.app.Service` hosted by the same process
+- Have both the client and server repeatedly send messages to each other around the same time from different threads
+
+### What did you expect to see?
+No deadlock
+
+### What did you see instead?
+Example deadlock, via `sendAcknowledgeBytes()`:
+
+```
+"xxx" prio=5 tid=25 Blocked
+  | group="main" sCount=1 ucsCount=0 flags=1 obj=0x12c40c00 self=0xb400006e9ce43460
+  | sysTid=24211 nice=10 cgrp=background sched=0/0 handle=0x6caac7dcb0
+  | state=S schedstat=( 6776198013 56795686488 17245 ) utm=455 stm=221 core=1 HZ=100
+  | stack=0x6caab7a000-0x6caab7c000 stackSize=1039KB
+  | held mutexes=
+  **at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:449)**
+  **- waiting to lock <0x04f85343> (a io.grpc.binder.internal.BinderTransport$BinderClientTransport) held by thread 64**
+  at io.grpc.binder.internal.LeakSafeOneWayBinder.onTransact(LeakSafeOneWayBinder.java:63)
+  at android.os.Binder.transact(Binder.java:1157)
+  at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:514)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  <OR> at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:515)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  <OR> at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:516)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  <OR> at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:517)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  **- locked <0x0f79cc83> (a io.grpc.binder.internal.BinderTransport$BinderServerTransport)**
+  **at io.grpc.binder.internal.LeakSafeOneWayBinder.onTransact(LeakSafeOneWayBinder.java:63)**
+  at android.os.Binder.transact(Binder.java:1157)
+  at io.grpc.binder.internal.BinderTransport.sendTransaction(BinderTransport.java:402)
+  at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:261)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  <OR> at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:262)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  <OR> at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:263)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  <OR> at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:264)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  at io.grpc.binder.internal.Outbound$ClientOutbound.sendSingleMessageAndHalfClose(Outbound.java:381)
+  at io.grpc.binder.internal.SingleMessageClientStream.halfClose(SingleMessageClientStream.java:105)
+  <OR> at io.grpc.binder.internal.Outbound$ClientOutbound.sendSingleMessageAndHalfClose(Outbound.java:382)
+  at io.grpc.binder.internal.SingleMessageClientStream.halfClose(SingleMessageClientStream.java:105)
+
+"yyy" prio=5 tid=64 Blocked
+  | group="main" sCount=1 ucsCount=0 flags=1 obj=0x12d41100 self=0xb400006e9cf25400
+  | sysTid=16535 nice=10 cgrp=background sched=0/0 handle=0x6ca795fcb0
+  | state=S schedstat=( 84994090 239215329 419 ) utm=5 stm=2 core=1 HZ=100
+  | stack=0x6ca785c000-0x6ca785e000 stackSize=1039KB
+  | held mutexes=
+  **at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:449)**
+  **- waiting to lock <0x0f79cc83> (a io.grpc.binder.internal.BinderTransport$BinderServerTransport) held by thread 25**
+  at io.grpc.binder.internal.LeakSafeOneWayBinder.onTransact(LeakSafeOneWayBinder.java:63)
+  at android.os.Binder.transact(Binder.java:1157)
+  at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:514)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  <OR> at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:515)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  <OR> at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:516)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  <OR> at io.grpc.binder.internal.BinderTransport.sendAcknowledgeBytes(BinderTransport.java:517)
+  at io.grpc.binder.internal.BinderTransport.handleTransaction(BinderTransport.java:477)
+  **- locked <0x04f85343> (a io.grpc.binder.internal.BinderTransport$BinderClientTransport)**
+  **at io.grpc.binder.internal.LeakSafeOneWayBinder.onTransact(LeakSafeOneWayBinder.java:63)**
+  at android.os.Binder.transact(Binder.java:1157)
+  at io.grpc.binder.internal.BinderTransport.sendTransaction(BinderTransport.java:402)
+  at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:261)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  <OR> at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:262)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  <OR> at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:263)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  <OR> at io.grpc.binder.internal.Outbound.sendInternal(Outbound.java:264)
+  at io.grpc.binder.internal.Outbound.send(Outbound.java:212)
+  at io.grpc.binder.internal.Outbound$ServerOutbound.sendSingleMessageAndClose(Outbound.java:460)
+  at io.grpc.binder.internal.SingleMessageServerStream.close(SingleMessageServerStream.java:102)
+  <OR> at io.grpc.binder.internal.Outbound$ServerOutbound.sendSingleMessageAndClose(Outbound.java:461)
+  at io.grpc.binder.internal.SingleMessageServerStream.close(SingleMessageServerStream.java:102)
+  \- locked <0x0f7ee7bb> (a io.grpc.binder.internal.Outbound$ServerOutbound)
+  at io.grpc.internal.ServerCallImpl.closeInternal(ServerCallImpl.java:223)
+  at io.grpc.internal.ServerCallImpl.close(ServerCallImpl.java:207)
+  at io.grpc.stub.ServerCalls$ServerCallStreamObserverImpl.onCompleted(ServerCalls.java:395)
+```
+
+

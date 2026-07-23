@@ -1,0 +1,6 @@
+Threading of StatsTraceContext
+StatsTraceContext assumes non-thread-safety, which is fine as long as the RPC is closed by the application through the ClientCall/ServerCall interface, which are also not thread-safe.
+
+However, if the RPC is not closed by the application, but either cancelled by the other side, or closed by transport due to errors, which will call `callEnded()` from the transport thread which is not synchronized with  the application thread. As the application may not be notified about the closure in time, it may still trying to send messages, resulting in `wireBytesSent()` etc being called after `callEnded()`, which would trigger a check failure. There is also a data race on the counter fields as `wireBytesSent()` etc write them and `callEnded()` reads them from different threads without synchronization.
+
+We will remove the preconditions checks from `writeBytesSent()` etc. For the data race, some kind of synchronization would be required, maybe atomics? @ejona86 

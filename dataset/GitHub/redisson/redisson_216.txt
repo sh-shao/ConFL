@@ -1,0 +1,36 @@
+Warnings about serialization exceptions being swallowed (using SerializationCodec with non-Serializable class)
+I wound up pulling my hair out after upgrading from 1.3.1 to 2.1.0 and starting some new projects - the root cause being my attempt to use the SerilizationCodec with objects that were not Serializable. Simplest reproduction:
+
+``` java
+    protected static class NonSerializable {
+        // empty
+    }
+
+    public void testSerializationFailure() {
+        final Redisson redisson = Redisson.create(createConfig().setCodec(new SerializationCodec()));
+        redisson.getBucket("serialization").set(new NonSerializable());
+    }
+```
+
+Expected: a warning about serialization with a root cause of a java.io.NotSerializableException.
+Actual: nothing in the logs, threads just hang around wait()ing on DefaultPromise.
+
+I'm not a netty expert so unfortunately I have no PR to fix this. My best guess at root cause lies in CommandExecutorService#async. If I modify the ChannelFutureListener to
+
+``` java
+            future.addListener(new ChannelFutureListener() {
+                @Override
+                public void operationComplete(ChannelFuture future) throws Exception {
+                    if (future.cause() != null) {
+                        throw new RedisConnectionException("Failed command " + command, future.cause());
+                    }
+                    ...
+                }
+            });
+```
+
+I get a nice warning message:
+`[nioEventLoopGroup-3-3] WARN io.netty.util.concurrent.DefaultPromise - An exception was thrown by org.redisson.CommandExecutorService$6.operationComplete()
+org.redisson.client.RedisConnectionException: Failed command RedisCommand [name=SET, subName=null] <snip />`
+
+The listener originated in 2019283a2edeb607d4010c77a5f84a0c9dcdb165

@@ -1,0 +1,65 @@
+PermitExpirableSemaphore acquireAsync seems to be broken
+**Expected behavior**
+PermitExpirableSemaphore's acquireAsync methods should acquire the lock correctly if permits are available.
+
+**Actual behavior**
+- The acquireAsync method without any parameters does not seem to complete at all.
+- The version that allows specifying a leaseTime appears to always wait for the leaseTime, after which it returns a permit.
+- The synchronous version of the same method works as expected.
+
+**Steps to reproduce or test case**
+```java
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+
+import java.util.concurrent.TimeUnit;
+
+public class Main {
+    private static void asyncTest(RedissonClient client) {
+        var semaphore = client.getPermitExpirableSemaphore("test.async_semaphore");
+        semaphore.trySetPermits(1);
+        var start = System.currentTimeMillis();
+        semaphore.acquireAsync(5000L, TimeUnit.MILLISECONDS).whenComplete((permit, e) -> {
+            System.out.println("Async acquired permit: " + permit);
+            System.out.println("Async acquiring took: " + (System.currentTimeMillis() - start) + "ms");
+        });
+    }
+
+    private static void syncTest(RedissonClient client) throws InterruptedException {
+        var semaphore = client.getPermitExpirableSemaphore("test.sync_semaphore");
+        semaphore.trySetPermits(1);
+        var start = System.currentTimeMillis();
+        var permit = semaphore.acquire(5000L, TimeUnit.MILLISECONDS);
+        System.out.println("Sync acquired permit: " + permit);
+        System.out.println("Sync acquiring took: " + (System.currentTimeMillis() - start) + "ms");
+    }
+
+
+    public static void main(String[] args) throws InterruptedException {
+        var config = new Config();
+        config.useSingleServer().setAddress("redis://localhost:6379").setDatabase(1);
+        var client = Redisson.create(config);
+        syncTest(client);
+        asyncTest(client);
+    }
+}
+```
+
+Sample output:
+```
+Sync acquired permit: 12ac66f382c0d6a9b56658d1b917f771
+Sync acquiring took: 17ms
+Async acquired permit: d0276bac313b3465100681b14a29fae0
+Async acquiring took: 5078ms
+```
+
+**Redis version**
+Tested on Redis 6.2.6 and 7.0.0
+
+**Redisson version**
+This issue appeared in Redisson version 3.16.8 and persists until 3.17.3.
+Versions below 3.16.7 work as expected.
+
+**Redisson configuration**
+Local single server

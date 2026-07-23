@@ -1,0 +1,37 @@
+Locking on Jersey
+I'm trying to use Lock and Unlock on Jersey Resource.
+1. User makes a POST request
+2. System LOCK "A"
+3. System does some stuff
+4. System UNLOCK "A"
+5. User makes another POST request
+6. System LOCK "A"
+7. System does some stuff
+8. System UNLOCK "A"
+
+The system crashes at point 6 (view attachment).
+
+If i try to make some LOCK-UNLOCK in a while loop it works, but when i make these LOCK-UNLOCK from different Threads it does not works.
+
+WARN  [2014-07-10 10:36:15,734] io.netty.channel.DefaultChannelPipeline: An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception.
+! java.lang.IllegalStateException: complete already: DefaultPromise@3c519764(incomplete)
+! at io.netty.util.concurrent.DefaultPromise.setSuccess(DefaultPromise.java:406) ~[netty-common-4.0.19.Final.jar:4.0.19.Final]
+! at org.redisson.RedissonLock$1.subscribed(RedissonLock.java:177) ~[redisson-1.1.3.jar:na]
+! at com.lambdaworks.redis.pubsub.RedisPubSubConnection.channelRead(RedisPubSubConnection.java:132) ~[redisson-1.1.3.jar:na]
+! at io.netty.channel.DefaultChannelHandlerContext.invokeChannelRead(DefaultChannelHandlerContext.java:341) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.DefaultChannelHandlerContext.fireChannelRead(DefaultChannelHandlerContext.java:327) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at com.lambdaworks.redis.pubsub.PubSubCommandHandler.decode(PubSubCommandHandler.java:46) [redisson-1.1.3.jar:na]
+! at com.lambdaworks.redis.protocol.CommandHandler.channelRead(CommandHandler.java:52) [redisson-1.1.3.jar:na]
+! at io.netty.channel.DefaultChannelHandlerContext.invokeChannelRead(DefaultChannelHandlerContext.java:341) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.DefaultChannelHandlerContext.fireChannelRead(DefaultChannelHandlerContext.java:327) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.ChannelInboundHandlerAdapter.channelRead(ChannelInboundHandlerAdapter.java:86) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.DefaultChannelHandlerContext.invokeChannelRead(DefaultChannelHandlerContext.java:341) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.DefaultChannelHandlerContext.fireChannelRead(DefaultChannelHandlerContext.java:327) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:785) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:126) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:507) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:464) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:378) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:350) [netty-transport-4.0.19.Final.jar:4.0.19.Final]
+! at io.netty.util.concurrent.SingleThreadEventExecutor$2.run(SingleThreadEventExecutor.java:116) [netty-common-4.0.19.Final.jar:4.0.19.Final]
+! at java.lang.Thread.run(Thread.java:722) [na:1.7.0_10-ea]

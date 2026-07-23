@@ -1,0 +1,6 @@
+OkHttpClientTransport.start should be async
+Connecting should be run in an executor. The main problem is that we currently can't create the `frameWriter` (an AsyncFrameWriter) until we have connected. The `frameReader` doesn't seem to be as big of an issue as we can just delay executing `clientFrameHandler`.
+
+We could try to use the same SerializingExecutor that is used inside AsyncFrameWriter. We would need to lazily initialize some things used on that thread, but we would be able to guarantee that the connection is started before real writes occur and they would be automatically queued.
+
+This would fix the true problem that is causing #577.

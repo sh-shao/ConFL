@@ -1,0 +1,34 @@
+Census Race
+```
+  Read of size 4 at 0x7f00465dfbcc by thread T123:
+    #0 java.nio.Buffer.remaining()I (Buffer.java:391)  
+    #1 io.grpc.internal.StatsTraceContext$1.toBytes(Lcom/google/census/CensusContext;)[B (StatsTraceContext.java:151)  
+    #2 io.grpc.internal.StatsTraceContext$1.toBytes(Ljava/lang/Object;)[B (StatsTraceContext.java:145)  
+    #3 io.grpc.Metadata$BinaryKey.toBytes(Ljava/lang/Object;)[B (Metadata.java:730)  
+    #4 io.grpc.Metadata.put(Lio/grpc/Metadata$Key;Ljava/lang/Object;)V (Metadata.java:314)  
+    #5 io.grpc.internal.StatsTraceContext.propagateToHeaders(Lio/grpc/Metadata;)V (StatsTraceContext.java:130)  
+    #6 io.grpc.internal.ClientCallImpl.prepareHeaders(Lio/grpc/Metadata;Lio/grpc/DecompressorRegistry;Lio/grpc/Compressor;Lio/grpc/internal/StatsTraceContext;)V (ClientCallImpl.java:156)  
+    #7 io.grpc.internal.ClientCallImpl.start(Lio/grpc/ClientCall$Listener;Lio/grpc/Metadata;)V (ClientCallImpl.java:211)  
+    #8 io.grpc.stub.ClientCalls.startCall(Lio/grpc/ClientCall;Lio/grpc/ClientCall$Listener;Z)V (ClientCalls.java:273)  
+    #9 io.grpc.stub.ClientCalls.asyncUnaryRequestCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/ClientCall$Listener;Z)V (ClientCalls.java:252)  
+    #10 io.grpc.stub.ClientCalls.asyncUnaryRequestCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/stub/StreamObserver;Z)V (ClientCalls.java:240)  
+    #11 io.grpc.stub.ClientCalls.asyncUnaryCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/stub/StreamObserver;)V (ClientCalls.java:80)  
+
+  Previous write of size 4 at 0x7f00465dfbcc by thread T7 (mutexes: write M771099600033694440, write M323554386926150112):
+    #0 java.nio.Buffer.position(I)Ljava/nio/Buffer; (Buffer.java:245)  
+    #1 java.nio.HeapByteBuffer.get([BII)Ljava/nio/ByteBuffer; (HeapByteBuffer.java:153)  
+    #2 java.nio.ByteBuffer.get([B)Ljava/nio/ByteBuffer; (ByteBuffer.java:715)  
+    #3 io.grpc.internal.StatsTraceContext$1.toBytes(Lcom/google/census/CensusContext;)[B (StatsTraceContext.java:152)  
+    #4 io.grpc.internal.StatsTraceContext$1.toBytes(Ljava/lang/Object;)[B (StatsTraceContext.java:145)  
+    #5 io.grpc.Metadata$BinaryKey.toBytes(Ljava/lang/Object;)[B (Metadata.java:730)  
+    #6 io.grpc.Metadata.put(Lio/grpc/Metadata$Key;Ljava/lang/Object;)V (Metadata.java:314)  
+    #7 io.grpc.internal.StatsTraceContext.propagateToHeaders(Lio/grpc/Metadata;)V (StatsTraceContext.java:130)  
+    #8 io.grpc.internal.ClientCallImpl.prepareHeaders(Lio/grpc/Metadata;Lio/grpc/DecompressorRegistry;Lio/grpc/Compressor;Lio/grpc/internal/StatsTraceContext;)V (ClientCallImpl.java:156)  
+    #9 io.grpc.internal.ClientCallImpl.start(Lio/grpc/ClientCall$Listener;Lio/grpc/Metadata;)V (ClientCallImpl.java:211)  
+    #10 io.grpc.stub.ClientCalls.startCall(Lio/grpc/ClientCall;Lio/grpc/ClientCall$Listener;Z)V (ClientCalls.java:273)  
+    #11 io.grpc.stub.ClientCalls.asyncUnaryRequestCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/ClientCall$Listener;Z)V (ClientCalls.java:252)  
+    #12 io.grpc.stub.ClientCalls.asyncUnaryRequestCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/stub/StreamObserver;Z)V (ClientCalls.java:240)  
+    #13 io.grpc.stub.ClientCalls.asyncUnaryCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/stub/StreamObserver;)V (ClientCalls.java:80)  
+```
+
+cc: @adriancole @zhangkun83 

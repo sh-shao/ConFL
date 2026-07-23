@@ -1,0 +1,60 @@
+Fair Lock attempt to compare nil with number
+In my code, I am trying to acquire a fair lock with a fixed waitTime and leaseTime as so
+```kotlin
+fairLock.tryLockAsync(waitTime, leaseTime, timeUnit, ID)
+```
+Occasionally, I face this error
+```
+ERR Error running script (call to f_762bfafa6be221431a0b668685dd15c926483619): @user_script:1: user_script:1: attempt to compare nil with number. channel: [id: 0xacec2457, L:/10.60.19.200:56300 - R:[redisURI]/[redisURI]:6379] command: (EVAL), promise: java.util.concurrent.CompletableFuture@7b16e88f[Not completed], params: [while true do local firstThreadId2 = redis.call('lindex', KEYS[2], 0);if firstThreadId2 == false the..., 3, lockName, redisson_lock_queue:{lockName}, redisson_lock_timeout:{lockName}, 36000, 8fe4a548-fa9f-42a3-8482-1d24d038f24f:830040972163392702, 36000, 1645538812661], stack trace: org.redisson.client.RedisException: ERR Error running script (call to f_762bfafa6be221431a0b668685dd15c926483619): @user_script:1: user_script:1: attempt to compare nil with number. channel: [id: 0xacec2457, L:/10.60.19.200:56300 - R:[redisURI]/[redisURI]:6379] command: (EVAL), promise: java.util.concurrent.CompletableFuture@7b16e88f[Not completed], params: [while true do local firstThreadId2 = redis.call('lindex', KEYS[2], 0);if firstThreadId2 == false the..., 3, lockName, redisson_lock_queue:{lockName}, redisson_lock_timeout:{lockName}, 36000, 8fe4a548-fa9f-42a3-8482-1d24d038f24f:830040972163392702, 36000, 1645538812661]
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:370)
+	at org.redisson.client.handler.CommandDecoder.decodeCommandBatch(CommandDecoder.java:271)
+	at org.redisson.client.handler.CommandDecoder.decodeCommand(CommandDecoder.java:210)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:137)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:113)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:510)
+	at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:366)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:279)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1410)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919)
+	at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:166)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:722)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:658)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:584)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:496)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:986)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+```
+I also see a queue is being formed for the fair lock, even though it is not currently held.  
+The waiting requests eventually time out after the waitTime expires.
+The queue is being formed for the same lock that this exception is being thrown for.  
+At times, I have also seen the queue being formed for no reason without this error being thrown. 
+
+I am not able to reproduce this locally, 
+
+**Redis version**
+
+6.x
+
+**Redisson version**
+
+3.16.8
+
+**Redisson configuration**
+
+```kotlin
+config.useSingleServer().apply {
+    path.toIntOrNull()?.also {
+        database = it
+    } ?: run {
+        logger.warn { "Unable to parse database number: $path from redis configuration" }
+    }
+}
+config.nettyThreads = 64
+```

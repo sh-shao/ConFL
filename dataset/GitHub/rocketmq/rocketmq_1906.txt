@@ -1,0 +1,6 @@
+BooleanConstantExpression might lead to class loading deadlock
+**BUG REPORT**
+
+Referencing subclass BooleanConstantExpression from superclass ConstantExpression initializer might lead to class loading deadlock
+
+PR: pls see https://github.com/apache/rocketmq/pull/1905

@@ -1,0 +1,4 @@
+Pool can deliver lease with null connection
+A race can happen in the pool when it delivers a lease. Leases are created as pool post actions and sometimes can read a connection from a slot that became null in the meantime the post action is executed.
+
+This leads in an NPE in the `HttpClient` that instead should not get non null closed connection, instead of a null connection. (reported here https://github.com/eclipse-vertx/vert.x/issues/4220#issuecomment-1003984163)

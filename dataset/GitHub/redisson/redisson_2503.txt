@@ -1,0 +1,18 @@
+Provide classloader incase of FST so that it doesnt get the class loader from current thread
+Do we have a way to provide class loader when using FST codec. we are facing classNotfound exceptions as the FSTConfiguration is picking up the current thread class loader which is used by RedisExecutor as shown in the below stack trace.
+
+> 195, FstCodec (org.redisson.codec)
+> <init>:190, FstCodec (org.redisson.codec)
+> newInstance0:-1, NativeConstructorAccessorImpl (sun.reflect)
+> newInstance:62, NativeConstructorAccessorImpl (sun.reflect)
+> newInstance:45, DelegatingConstructorAccessorImpl (sun.reflect)
+> newInstance:423, Constructor (java.lang.reflect)
+> getCodec:705, RedisExecutor (org.redisson.command)
+> execute:132, RedisExecutor (org.redisson.command)
+> run:357, RedisExecutor$3 (org.redisson.command)
+> expire:663, HashedWheelTimer$HashedWheelTimeout (io.netty.util)
+> expireTimeouts:738, HashedWheelTimer$HashedWheelBucket (io.netty.util)
+> run:466, HashedWheelTimer$Worker (io.netty.util)
+> run:748, Thread (java.lang)__
+
+Our proprietary classes are loaded from our class loader. So wanted to understand if we can set the classloader which is used by FSTCodec.

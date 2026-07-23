@@ -1,0 +1,127 @@
+Redisson throws RedisTimeoutException before timeout has exceeded
+<!--
+Please consider to take commercial 24x7 support included in PRO version https://redisson.pro
+-->
+
+### Expected behavior
+
+Redisson throws RedisTimeoutException after timeout has exceeded.
+
+### Actual behavior
+
+There is a race condition where Redisson may throw RedisTimeoutException after retryInterval has exceeded but before timeout has exceeded (in a nutshell when there are bursts of commands, commands will timeout even if timeout hasn't passed if retry interval is set to 0).
+
+line 765 in CommandAsyncService seems suspect as it uses retry interval for the initial timeout value..
+
+```java
+     Timeout timeout = connectionManager.newTimeout(retryTimerTask, connectionManager.getConfig().getRetryInterval(), TimeUnit.MILLISECONDS);
+```
+
+org.redisson.client.RedisTimeoutException: Unable to send command! Try to increase 'nettyThreads' and/or connection pool size settings Node source: NodeSource [slot=null, addr=null, redisClient=null, redirect=null, entry=MasterSlaveEntry [masterEntry=[freeSubscribeConnectionsAmount=1, freeSubscribeConnectionsCounter=value:50:queue:0, freeConnectionsAmount=31, freeConnectionsCounter=value:63:queue:0, freezed=false, freezeReason=null, client=[addr=redis://127.0.0.1:6379], nodeType=MASTER, firstFail=0]]], connection: RedisConnection@1164990041 [redisClient=[addr=redis://127.0.0.1:6379], channel=[id: 0xfe590eb3, L:/127.0.0.1:61299 - R:127.0.0.1/127.0.0.1:6379], command=null], current command in queue: null, command: (EVAL), params: [local insertable = false; local value = redis.call('hget', KEYS[1], ARGV[5]); local t, val;if value ..., 8, HibernateCache.Product, redisson__timeout__set:{HibernateCache.Product}, redisson__idle__set:{HibernateCache.Product}, redisson_map_cache_created:{HibernateCache.Product}, redisson_map_cache_updated:{HibernateCache.Product}, redisson__map_cache__last_access__set:{HibernateCache.Product}, redisson_map_cache_removed:{HibernateCache.Product}, {HibernateCache.Product}:redisson_options, ...] after 0 retry attempts
+
+### Steps to reproduce or test case
+
+On faster machines you may need to create some artificial load then run the reproducer..
+
+```
+stress --cpu 8 --timeout 120
+```
+
+```java
+import org.redisson.Redisson;
+import org.redisson.api.RMap;
+import org.redisson.api.RedissonClient;
+import org.redisson.client.RedisException;
+import org.redisson.codec.SnappyCodec;
+import org.redisson.config.Config;
+import org.redisson.config.SingleServerConfig;
+import org.redisson.config.TransportMode;
+
+import java.io.Serializable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ForkJoinPool;
+
+/**
+ * @author Johno Crawford (johno@sulake.com)
+ */
+public class BurstMain {
+
+    private static final ForkJoinPool forkJoinPool = new ForkJoinPool(16);
+
+    public static void main(String[] args) {
+        final Config config = new Config();
+        final SingleServerConfig singleServerConfig = config.useSingleServer();
+        singleServerConfig.setDatabase(3);
+        singleServerConfig.setTimeout(1000);
+        singleServerConfig.setRetryAttempts(0);
+        singleServerConfig.setRetryInterval(0);
+        //singleServerConfig.setConnectionPoolSize(8);
+        //singleServerConfig.setConnectionMinimumIdleSize(8);
+        singleServerConfig.setRetryInterval(0);
+        singleServerConfig.setTcpNoDelay(true);
+        singleServerConfig.setKeepAlive(true);
+        singleServerConfig.setAddress("redis://127.0.0.1:6379");
+        config.setCodec(new SnappyCodec());
+        config.setTransportMode(TransportMode.NIO);
+        config.setReferenceEnabled(false);
+
+        final RedissonClient redissonClient = Redisson.create(config);
+
+        for (int i = 0; i < 16; i++) {
+            createWorker(redissonClient, i);
+        }
+
+        redissonClient.shutdown();
+    }
+
+    private static void createWorker(RedissonClient redissonClient, int id) {
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        CompletableFuture.runAsync(() -> {
+            final RMap<String, Room> rMap = redissonClient.getMap("mymap" + id );
+            rMap.clear();
+
+            try {
+                for (int i = 0; i < 100000; i++) {
+                    rMap.put("huuhaa_" + i, new Room(i, "huuhaa", 12));
+                    rMap.get("huuhaa_" + i);
+                    rMap.get("huuhaa_" + i);
+                }
+                cf.complete(null);
+            } catch (RedisException e) {
+                cf.completeExceptionally(e);
+            }
+        }, forkJoinPool);
+        cf.join();
+    }
+
+    private static class Room implements Serializable {
+
+        private static final long serialVersionUID = 1L;
+
+        private int id;
+        private String name;
+        private int score;
+
+        public Room() {
+        }
+
+        public Room(int id, String name, int score) {
+            this.id = id;
+            this.name = name;
+            this.score = score;
+        }
+    }
+}
+```
+
+### Redis version
+
+redis-5.0.5-1.fc30.x86_64 / 4.0.9
+
+### Redisson version
+
+3.10.7
+
+### Redisson configuration
+
+n/a

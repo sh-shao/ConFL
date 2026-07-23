@@ -1,0 +1,130 @@
+Thread blocked in io.vertx.core.net.impl.clientconnection.ConnectionManager.getConnection
+While upgrading https://github.com/folio-org/okapi from Vert.x 4.0.0 milestone 4 to milestone 5, we noticed a serious issue with HttpClient connections being thread blocked.. It seems to appear when connection can not be made to a remote host. Using same client and issuing another request that also fails results in a thread blocked warning and a halt of the event loop.. 
+
+openjdk version "1.8.0_252"
+OpenJDK Runtime Environment (build 1.8.0_252-8u252-b09-1ubuntu1-b09)
+OpenJDK 64-Bit Server VM (build 25.252-b09, mixed mode)
+
+and
+
+openjdk version "14.0.1" 2020-04-14
+OpenJDK Runtime Environment (build 14.0.1+7-Ubuntu-1ubuntu1)
+OpenJDK 64-Bit Server VM (build 14.0.1+7-Ubuntu-1ubuntu1, mixed mode, sharing)
+
+
+Host: Ubuntu 20.04 amd64
+
+Log:
+```
+
+[INFO] Running org.folio.okapi.common.HttpClientDoubleFail
+10:54:37 WARN  ?                    Thread Thread[vert.x-eventloop-thread-1,5,main] has been blocked for 2883 ms, time limit is 2000 ms
+10:54:38 WARN  ?                    Thread Thread[vert.x-eventloop-thread-1,5,main] has been blocked for 3883 ms, time limit is 2000 ms
+10:54:39 WARN  ?                    Thread Thread[vert.x-eventloop-thread-1,5,main] has been blocked for 4883 ms, time limit is 2000 ms
+10:54:40 WARN  ?                    Thread Thread[vert.x-eventloop-thread-1,5,main] has been blocked for 5883 ms, time limit is 2000 ms
+io.vertx.core.VertxException: Thread blocked
+	at io.vertx.core.net.impl.clientconnection.ConnectionManager.getConnection(ConnectionManager.java:46) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientImpl.getConnectionForRequest(HttpClientImpl.java:1288) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.connect(HttpClientRequestImpl.java:422) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.write(HttpClientRequestImpl.java:614) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.end(HttpClientRequestImpl.java:527) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.end(HttpClientRequestImpl.java:521) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at org.folio.okapi.common.HttpClientDoubleFail.lambda$test$2(HttpClientDoubleFail.java:45) ~[test-classes/:?]
+	at org.folio.okapi.common.HttpClientDoubleFail$$Lambda$34/1409160703.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.impl.AbstractContext.emit(AbstractContext.java:181) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.impl.AbstractContext.lambda$dispatch$0(AbstractContext.java:84) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.impl.AbstractContext$$Lambda$52/1790422902.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.impl.EventLoopContext.schedule(EventLoopContext.java:59) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.impl.AbstractContext.schedule(AbstractContext.java:94) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.impl.AbstractContext.dispatch(AbstractContext.java:84) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.handleException(HttpClientRequestImpl.java:97) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.lambda$connect$2(HttpClientRequestImpl.java:433) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientRequestImpl$$Lambda$37/2097905212.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.impl.AbstractContext.emit(AbstractContext.java:181) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientImpl.lambda$getConnectionForRequest$6(HttpClientImpl.java:1292) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpClientImpl$$Lambda$38/1265900909.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.net.impl.clientconnection.Endpoint.lambda$getConnection$0(Endpoint.java:51) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.net.impl.clientconnection.Endpoint$$Lambda$43/2130192211.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.net.impl.clientconnection.Pool.connectFailed(Pool.java:389) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.net.impl.clientconnection.Pool.access$600(Pool.java:89) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.net.impl.clientconnection.Pool$Holder.lambda$connect$0(Pool.java:130) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.net.impl.clientconnection.Pool$Holder$$Lambda$46/1046834544.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.impl.FutureImpl.doDispatch(FutureImpl.java:127) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.impl.FutureImpl.dispatch(FutureImpl.java:119) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.impl.FutureImpl.tryFail(FutureImpl.java:170) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpChannelConnector.connectFailed(HttpChannelConnector.java:272) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpChannelConnector.lambda$doConnect$0(HttpChannelConnector.java:186) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.http.impl.HttpChannelConnector$$Lambda$51/1800691917.operationComplete(Unknown Source) ~[?:?]
+	at io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:577) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:551) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:490) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.setValue0(DefaultPromise.java:615) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.setFailure0(DefaultPromise.java:608) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.setFailure(DefaultPromise.java:109) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.vertx.core.net.impl.ChannelProvider.lambda$handleConnect$0(ChannelProvider.java:141) ~[vertx-core-4.0.0-milestone5.jar:4.0.0-milestone5]
+	at io.vertx.core.net.impl.ChannelProvider$$Lambda$50/214530301.operationComplete(Unknown Source) ~[?:?]
+	at io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:577) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners0(DefaultPromise.java:570) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:549) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:490) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.setValue0(DefaultPromise.java:615) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.setFailure0(DefaultPromise.java:608) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.DefaultPromise.tryFailure(DefaultPromise.java:117) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.fulfillConnectPromise(AbstractNioChannel.java:321) ~[netty-transport-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.finishConnect(AbstractNioChannel.java:337) ~[netty-transport-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:702) ~[netty-transport-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:650) ~[netty-transport-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:576) ~[netty-transport-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:493) ~[netty-transport-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:989) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) ~[netty-common-4.1.49.Final.jar:4.1.49.Final]
+	at java.lang.Thread.run(Thread.java:748) ~[?:1.8.0_252]
+10:54:41 WARN  ?                    Thread Thread[vert.x-eventloop-thread-1,5,main] has been blocked for 6884 ms, time limit is 2000 ms
+```
+
+
+Test case:
+
+```
+RunWith(VertxUnitRunner.class)
+public class HttpClientFail2Test {
+  private Vertx vertx;
+
+  @Before
+  public void setUp(TestContext context) {
+    vertx = Vertx.vertx();
+  }
+
+  @After
+  public void tearDown(TestContext context) {
+    vertx.close(context.asyncAssertSuccess());
+  }
+
+  @Test
+  public void test(TestContext context) {
+    Async async = context.async();
+
+    HttpClient client = vertx.createHttpClient();
+    HttpClientRequest req1 = client.request(
+        new RequestOptions().setAbsoluteURI("http://localhost:9292"))
+        .exceptionHandler(res1 -> {
+          HttpClientRequest req2 = client.request(
+              new RequestOptions().setAbsoluteURI("http://localhost:9292"))
+              .exceptionHandler(res2 -> async.complete())
+              .onSuccess(res2 -> {
+                context.fail("unexpected success; something running?");
+                async.complete();
+              });
+          req2.end();
+        })
+        .onSuccess(
+            res1 -> {
+              context.fail("unexpected success; something running?");
+              async.complete();
+            });
+    req1.end();
+    async.await(5000);
+  }
+}
+```

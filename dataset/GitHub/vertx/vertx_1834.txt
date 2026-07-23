@@ -1,0 +1,8 @@
+Don't call HttpServer request/ws close handler holding locks
+Motivation:
+
+currently the ServerWebSocket and HttpServerRequest close handlers are called under synchronized lock of the connection. This can create deadlocks in SockJSSocket because a SockJSSocket may uses different request/websocket (reconnects) and event loops.
+
+Change:
+
+when processing a Netty close event, call the close handlers in the next tick (i.e scheduled to run on context).

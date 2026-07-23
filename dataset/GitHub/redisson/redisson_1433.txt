@@ -1,0 +1,76 @@
+Concurrent calls to RemoteService should not result in an exception
+﻿### Expected behavior
+Concurrent calls to RemoteService should not result in an exception
+
+### Actual behavior
+Concurrent calls to RemoteService should result in an exception
+
+### Steps to reproduce or test case
+
+```
+public interface IService {
+  Boolean addToThreadUnsafeList(Integer element);
+
+  List<Integer> getList();
+
+  void clear();
+}
+
+
+public class ServiceImpl implements IService {
+  private List<Integer> list;
+
+  public ServiceImpl() {
+    list = new ArrayList<>();
+  }
+
+  public Boolean addToThreadUnsafeList(Integer element) {
+    System.out.println(element);
+    return list.add(element);
+  }
+
+  @Override
+  public List<Integer> getList() {
+    return list;
+  }
+
+  @Override
+  public void clear() {
+    list.clear();
+  }
+
+}
+
+
+  private void parallelTestUsingExecutorServiceAndPoolSizeOf(int poolSize) {
+    ExecutorService executorService = Executors.newFixedThreadPool(poolSize);
+    IService service = redissonClient.getRemoteService().get(IService.class);
+
+    List<Future<Boolean>> futures = new ArrayList<>();
+
+    for (int i = 0; i < iterations; i++) {
+      final Integer element = i;
+      futures.add(executorService.submit(() -> service.addToThreadUnsafeList(element)));
+    }
+
+    while (!futures.stream().allMatch(Future::isDone)) {}
+
+    try {
+      Thread.sleep(10000);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+    assertThat(service.getList()).hasSize(iterations);
+  }
+
+```
+### Redis version
+4.0.9
+
+### Redisson version
+3.6.5
+
+### Redisson configuration
+```
+config.useSingleServer().setAddress("redis://127.0.0.1:6379");
+```

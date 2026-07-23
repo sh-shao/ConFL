@@ -1,0 +1,4 @@
+Avoid holding lock in ConnectionBase#writeToChannel
+The current implementation of `ConnectionBase#writeToChannel` synchronises on the `ConnectionBase` (which is necessary) and holds this lock when calling `ChannelHandlerContext#write` or `ChannelHandlerContext#writeAndFlush`. It happens that when the channel outbound buffer is full, the write operation drains the buffer on a flush changing the channel writability leading to potential deadlock in Vert.x
+
+We should avoid holding the lock and restrict the lock scope only for the reading/writing the `ConnectionBase` intrinsic state (i.e `needsFlush` and `writeInProgress` fields).

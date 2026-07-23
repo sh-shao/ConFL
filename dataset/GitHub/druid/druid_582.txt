@@ -1,0 +1,12 @@
+Race in jar upload during hadoop indexing
+Hadoop indexing (through io.druid.indexer.JobHelper) does something like:
+
+```
+if (!fs.exists(jar)) {
+  upload jar using fs.create() to workingPath/classpath/jarName.jar
+}
+```
+
+The same jar path is used for all druid jobs running on the same cluster. If two jobs start at the same time, both can find that the file doesn't exist, and the second one can overwrite the first one. This will cause the AM to fail because the hadoop AM is pretty particular about the mtime of its jar files.
+
+Possible solutions: (a) Better locking, or (b) have each job upload its jars to a separate directory.

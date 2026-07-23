@@ -1,0 +1,38 @@
+Lock watchdog does not monitor read locks
+Hi, when we acquire multiple (concurrent) read locks and process a task for longer than the [Config.lockWatchdogTimeout](https://github.com/redisson/redisson/wiki/2.-Configuration#lockwatchdogtimeout), we get errors when unlocking.
+
+Code to reproduce (wait the watchdog timeout):
+```
+int threadCount = 100;
+
+ExecutorService executorService = Executors.newFixedThreadPool(threadCount/5);
+
+for (int i=0; i<threadCount; i++) {
+	executorService.submit(()-> {
+		try {
+			RReadWriteLock rw1 = client.getReadWriteLock("mytestlock");
+			RLock readLock = rw1.readLock();
+			readLock.lock();
+			try {
+				Thread.sleep(config.getLockWatchdogTimeout() + 5000);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			readLock.unlock();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+	});
+}
+		
+System.out.println("All scheduled");
+executorService.shutdown();
+executorService.awaitTermination(1, TimeUnit.DAYS);
+System.out.println("Terminated");
+```
+
+Looking into Redis for the ttl of different keys, I noticed:
+- The key 'mytestlock' gets an extended ttl
+- The key '{mytestlock}:UUID:THREADID:rwlock_timeout:1 is not set with new ttl and the key disappears before the unlock is called.
+
+We tested with Redisson 3.5.4 and 3.7.5.

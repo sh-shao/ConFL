@@ -1,0 +1,282 @@
+Race condition causing NPE with LocalChannelProvider and GrpcCallContext with timeout
+There seems to be a race condition causing a `NullPointerException` when using an `InProcessServer`, a `LocalChannelProvider` and a `GrpcCallContext` with a very short timeout.
+
+The following example call will (often) cause the problem:
+
+```java
+GrpcCallContext context = GrpcCallContext.createDefault().withTimeout(Duration.ofMillis(1L));
+client
+    .getOperationCallable()
+    .futureCall(GetOperationRequest.getDefaultInstance(), context)
+    .get();
+```
+
+Assuming that the (mock) server will take more than 1 millisecond to respond, the expected outcome should be a `DeadlineExceededException` wrapped in an `ExecutionException`. Instead, a `NullPointerException` is logged and the call hangs indefinitely.
+
+The exception that is logged is:
+
+```
+Oct 18, 2019 3:07:03 PM io.grpc.Context$ExecutableListener deliver
+INFO: Exception notifying context listener
+java.lang.NullPointerException
+	at io.grpc.inprocess.InProcessTransport$InProcessStream$InProcessClientStream.internalCancel(InProcessTransport.java:746)
+	at io.grpc.inprocess.InProcessTransport$InProcessStream$InProcessClientStream.serverClosed(InProcessTransport.java:683)
+	at io.grpc.inprocess.InProcessTransport$InProcessStream$InProcessClientStream.access$1700(InProcessTransport.java:619)
+	at io.grpc.inprocess.InProcessTransport$InProcessStream$InProcessServerStream.cancel(InProcessTransport.java:563)
+	at io.grpc.internal.ServerImpl$ServerTransportListenerImpl$1ServerStreamCancellationListener.cancelled(ServerImpl.java:596)
+	at io.grpc.Context$ExecutableListener.run(Context.java:1005)
+	at com.google.common.util.concurrent.DirectExecutor.execute(DirectExecutor.java:30)
+	at io.grpc.Context$ExecutableListener.deliver(Context.java:997)
+	at io.grpc.Context.addListener(Context.java:479)
+	at io.grpc.internal.ServerImpl$ServerTransportListenerImpl.createContext(ServerImpl.java:601)
+	at io.grpc.internal.ServerImpl$ServerTransportListenerImpl.streamCreatedInternal(ServerImpl.java:501)
+	at io.grpc.internal.ServerImpl$ServerTransportListenerImpl.streamCreated(ServerImpl.java:476)
+	at io.grpc.inprocess.InProcessTransport$InProcessStream$InProcessClientStream.start(InProcessTransport.java:780)
+	at io.grpc.internal.ForwardingClientStream.start(ForwardingClientStream.java:87)
+	at io.grpc.internal.InternalSubchannel$CallTracingTransport$1.start(InternalSubchannel.java:642)
+	at io.grpc.internal.ClientCallImpl.startInternal(ClientCallImpl.java:290)
+	at io.grpc.internal.ClientCallImpl.start(ClientCallImpl.java:190)
+	at io.grpc.internal.CensusTracingModule$TracingClientInterceptor$1.start(CensusTracingModule.java:394)
+	at io.grpc.internal.CensusStatsModule$StatsClientInterceptor$1.start(CensusStatsModule.java:695)
+	at io.grpc.ForwardingClientCall.start(ForwardingClientCall.java:32)
+	at com.google.api.gax.grpc.GrpcHeaderInterceptor$1.start(GrpcHeaderInterceptor.java:94)
+	at io.grpc.ForwardingClientCall.start(ForwardingClientCall.java:32)
+	at com.google.api.gax.grpc.testing.LocalChannelProvider$LocalHeaderInterceptor$1.start(LocalChannelProvider.java:188)
+	at io.grpc.stub.ClientCalls.startCall(ClientCalls.java:310)
+	at io.grpc.stub.ClientCalls.asyncUnaryRequestCall(ClientCalls.java:282)
+	at io.grpc.stub.ClientCalls.futureUnaryCall(ClientCalls.java:191)
+	at com.google.api.gax.grpc.GrpcDirectCallable.futureCall(GrpcDirectCallable.java:58)
+	at com.google.api.gax.grpc.GrpcExceptionCallable.futureCall(GrpcExceptionCallable.java:64)
+	at com.google.api.gax.rpc.UnaryCallable$1.futureCall(UnaryCallable.java:126)
+	at com.google.api.gax.tracing.TracedUnaryCallable.futureCall(TracedUnaryCallable.java:75)
+	at com.google.api.gax.rpc.UnaryCallable$1.futureCall(UnaryCallable.java:126)
+	at com.google.cloud.grpctest.GrpcTest.test(GrpcTest.java:138)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:606)
+	at org.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:50)
+	at org.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)
+	at org.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:47)
+	at org.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)
+	at org.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)
+	at org.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)
+	at org.junit.runners.ParentRunner.runLeaf(ParentRunner.java:325)
+	at org.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:78)
+	at org.junit.runners.BlockJUnit4ClassRunner.runChild(BlockJUnit4ClassRunner.java:57)
+	at org.junit.runners.ParentRunner$3.run(ParentRunner.java:290)
+	at org.junit.runners.ParentRunner$1.schedule(ParentRunner.java:71)
+	at org.junit.runners.ParentRunner.runChildren(ParentRunner.java:288)
+	at org.junit.runners.ParentRunner.access$000(ParentRunner.java:58)
+	at org.junit.runners.ParentRunner$2.evaluate(ParentRunner.java:268)
+	at org.junit.internal.runners.statements.RunBefores.evaluate(RunBefores.java:26)
+	at org.junit.internal.runners.statements.RunAfters.evaluate(RunAfters.java:27)
+	at org.junit.runners.ParentRunner.run(ParentRunner.java:363)
+	at org.eclipse.jdt.internal.junit4.runner.JUnit4TestReference.run(JUnit4TestReference.java:89)
+	at org.eclipse.jdt.internal.junit.runner.TestExecution.run(TestExecution.java:41)
+	at org.eclipse.jdt.internal.junit.runner.RemoteTestRunner.runTests(RemoteTestRunner.java:541)
+	at org.eclipse.jdt.internal.junit.runner.RemoteTestRunner.runTests(RemoteTestRunner.java:763)
+	at org.eclipse.jdt.internal.junit.runner.RemoteTestRunner.run(RemoteTestRunner.java:463)
+	at org.eclipse.jdt.internal.junit.runner.RemoteTestRunner.main(RemoteTestRunner.java:209)
+```
+
+gRPC version: 1.24
+
+The following test class will reproduce the problem. If you change the value of the `CLIENT_CONTEXT_TIMEOUT` constant from 1 millisecond to for example 100 milliseconds, you will get the expected outcome of each call just timing out and the test case will succeed (after 10 seconds).
+
+```java
+package com.google.cloud.grpctest;
+
+import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.fail;
+
+import com.google.api.gax.core.NoCredentialsProvider;
+import com.google.api.gax.grpc.GrpcCallContext;
+import com.google.api.gax.grpc.testing.LocalChannelProvider;
+import com.google.api.gax.grpc.testing.MockGrpcService;
+import com.google.api.gax.rpc.DeadlineExceededException;
+import com.google.longrunning.GetOperationRequest;
+import com.google.longrunning.MockOperationsImpl;
+import com.google.longrunning.Operation;
+import com.google.longrunning.OperationsClient;
+import com.google.longrunning.OperationsSettings;
+import com.google.protobuf.AbstractMessage;
+import io.grpc.Server;
+import io.grpc.ServerServiceDefinition;
+import io.grpc.Status;
+import io.grpc.inprocess.InProcessServerBuilder;
+import io.grpc.stub.StreamObserver;
+import java.io.IOException;
+import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.threeten.bp.Duration;
+
+public class GrpcTest {
+  private static final long SERVER_EXEC_TIME_MILLIS = 1000L;
+  private static final long CLIENT_CONTEXT_TIMEOUT = 1L;
+
+  private static class MockOperations implements MockGrpcService {
+    private final MockOperationsImpl serviceImpl;
+
+    public MockOperations() {
+      serviceImpl =
+          new MockOperationsImpl() {
+            @Override
+            public void getOperation(
+                GetOperationRequest request, StreamObserver<Operation> responseObserver) {
+              try {
+                // Simulate a longer execution time.
+                Thread.sleep(SERVER_EXEC_TIME_MILLIS);
+              } catch (InterruptedException e) {
+                throw Status.CANCELLED.asRuntimeException();
+              }
+              responseObserver.onNext(Operation.getDefaultInstance());
+              responseObserver.onCompleted();
+            }
+          };
+    }
+
+    @Override
+    public List<AbstractMessage> getRequests() {
+      return serviceImpl.getRequests();
+    }
+
+    @Override
+    public void addResponse(AbstractMessage response) {
+      serviceImpl.addResponse(response);
+    }
+
+    @Override
+    public void addException(Exception exception) {
+      serviceImpl.addException(exception);
+    }
+
+    @Override
+    public ServerServiceDefinition getServiceDefinition() {
+      return serviceImpl.bindService();
+    }
+
+    @Override
+    public void reset() {
+      serviceImpl.reset();
+    }
+  }
+
+  private static MockOperations mockOperations;
+  private static Server server;
+  private static LocalChannelProvider channelProvider;
+  private OperationsClient client;
+
+  @BeforeClass
+  public static void setupClass() throws IOException {
+    String uniqueName = InProcessServerBuilder.generateName();
+    mockOperations = new MockOperations() {};
+
+    server =
+        InProcessServerBuilder.forName(uniqueName)
+            // We need to use a real executor for timeouts to occur.
+            .scheduledExecutorService(new ScheduledThreadPoolExecutor(1))
+            .addService(mockOperations.getServiceDefinition())
+            .build()
+            .start();
+    channelProvider = LocalChannelProvider.create(uniqueName);
+  }
+
+  @AfterClass
+  public static void stopServer() throws InterruptedException {
+    server.shutdown();
+    server.awaitTermination();
+  }
+
+  @Before
+  public void setUp() throws IOException {
+    mockOperations.reset();
+    OperationsSettings.Builder builder = OperationsSettings.newBuilder();
+    // Set default to no retries and a very long timeout. The call context will be used to set a
+    // shorter timeout.
+    builder.getOperationSettings().setSimpleTimeoutNoRetries(Duration.ofDays(1L));
+    OperationsSettings settings =
+        builder
+            .setTransportChannelProvider(channelProvider)
+            .setCredentialsProvider(NoCredentialsProvider.create())
+            .build();
+
+    client = OperationsClient.create(settings);
+  }
+
+  @After
+  public void tearDown() throws Exception {
+    client.close();
+  }
+
+  @Test
+  public void test() throws InterruptedException, ExecutionException {
+    for (int i = 0; i < 100; i++) {
+      GrpcCallContext context =
+          GrpcCallContext.createDefault().withTimeout(Duration.ofMillis(CLIENT_CONTEXT_TIMEOUT));
+      try {
+        client
+            .getOperationCallable()
+            .futureCall(GetOperationRequest.getDefaultInstance(), context)
+            .get();
+        fail("missing expected DEADLINE_EXCEEDED exception");
+      } catch (ExecutionException e) {
+        assertThat(e.getCause()).isInstanceOf(DeadlineExceededException.class);
+      }
+    }
+  }
+}
+```
+
+Dependencies:
+
+```xml
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>grpc-test</artifactId>
+  <version>0.0.1-SNAPSHOT</version>
+  <properties>
+    <java.version>1.8</java.version>
+    <maven.compiler.source>1.8</maven.compiler.source>
+    <maven.compiler.target>1.8</maven.compiler.target>
+  </properties>
+  <parent>
+    <groupId>com.google.cloud</groupId>
+    <artifactId>google-cloud-clients</artifactId>
+    <version>0.116.1-alpha-SNAPSHOT</version>
+  </parent>
+  
+  <dependencies>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>google-cloud-core-grpc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.api.grpc</groupId>
+      <artifactId>grpc-google-common-protos</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.truth</groupId>
+      <artifactId>truth</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.api</groupId>
+      <artifactId>gax-grpc</artifactId>
+      <classifier>testlib</classifier>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
+```

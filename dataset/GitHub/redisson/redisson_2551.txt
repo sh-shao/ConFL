@@ -1,0 +1,51 @@
+RLock.unlock() results in ERR hash value is not an integer
+**Redis**: 5.0.12
+**Redisson**: 3.12.0
+
+The following code snippet will successfully create and lock RLock and will throw RedisException unlocking the lock. 
+
+```
+   RLock lock = client.getLock("lock-test");
+   lock.lock();
+   lock.unlock();
+```
+
+```
+org.redisson.client.RedisException: ERR Error running script (call to f_3ffe249c16dee540ac8ab32e39bd408626b9aff7): @user_script:1: ERR hash value is not an integer . channel: [id: 0x7c579845, L:/my-ip:port - R:host/my-ip:port] command: (EVAL), params: [if (redis.call('hexists', KEYS[1], ARGV[3]) == 0) then return nil;end; local counter = redis.call('h..., 2, lock-test, redisson_lock__channel:{lock-test}, 0, 30000, 62ad3063-9ff4-4a24-bfe1-bd08254b2968:1]
+
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:351)
+	at org.redisson.client.handler.CommandDecoder.decodeCommand(CommandDecoder.java:199)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:139)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:114)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:502)
+	at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:366)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:278)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:359)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:345)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:337)
+	at io.netty.channel.ChannelInboundHandlerAdapter.channelRead(ChannelInboundHandlerAdapter.java:86)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:359)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:345)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:337)
+	at io.netty.channel.ChannelInboundHandlerAdapter.channelRead(ChannelInboundHandlerAdapter.java:86)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:359)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:345)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:337)
+	at io.netty.channel.ChannelInboundHandlerAdapter.channelRead(ChannelInboundHandlerAdapter.java:86)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:359)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:345)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:337)
+	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1408)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:359)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:345)
+	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:930)
+	at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:163)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:677)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:612)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:529)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:491)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:905)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:748)
+
+```

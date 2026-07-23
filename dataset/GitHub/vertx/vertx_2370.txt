@@ -1,0 +1,2 @@
+HttpClient pool gets inconsistent on a synchronous connection failure
+The HttpClient pool assumes that the underlying `ConnectionProvider` will make an asynchronous callback, which is the case with the asynchronous DNS resolver but not with the JVM synchronous resolver when the host cannot be resolved.

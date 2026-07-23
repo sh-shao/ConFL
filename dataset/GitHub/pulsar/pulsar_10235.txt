@@ -1,0 +1,19 @@
+Deadlock on Monitoring thread ... LeaderService.isLeader()
+**Describe the bug**
+When checking dashboards, we found that the pulsar summary board showed that 33% of brokers were running. However kubernetes showed that all of the brokers were running. We traced this back to problems with the metrics queries not returning "wget http://localhost:8080/metrics" and this was indeed returning a Gateway timeout. We checked the logs and found no errors in the logs to indicate that a exception occurred during the processing of the metrics query. So we proceeded to take heap dumps and stack traces from the java process. While it continued to process data through many of the queues. 
+
+Review of the stack traces showed that the prometheus-stats thread was hung waiting on a Lock that was held by another thread (pulsar-external-listener). However the other thread was waiting on additional locks. I suspect that there is a deadlock condition somewhere but I could not find the other lock that it was waiting upon. I believe the problem could be that the scope of what is executed in becameInactive() is too wide. 
+
+
+
+[threaddump_itomdipulsar-broker-7865b7ff5d-zg42s_150421-004920.log](https://github.com/apache/pulsar/files/6314038/threaddump_itomdipulsar-broker-7865b7ff5d-zg42s_150421-004920.log)
+[threaddump_itomdipulsar-broker-7865b7ff5d-gcs4n_150421-004920.log](https://github.com/apache/pulsar/files/6314039/threaddump_itomdipulsar-broker-7865b7ff5d-gcs4n_150421-004920.log)
+[threaddump_itomdipulsar-broker-7865b7ff5d-8rglm_150421-004920.log](https://github.com/apache/pulsar/files/6314040/threaddump_itomdipulsar-broker-7865b7ff5d-8rglm_150421-004920.log)
+[itomdipulsar-broker-7865b7ff5d-zg42s.log](https://github.com/apache/pulsar/files/6314073/itomdipulsar-broker-7865b7ff5d-zg42s.log)
+[itomdipulsar-broker-7865b7ff5d-gcs4n.log](https://github.com/apache/pulsar/files/6314074/itomdipulsar-broker-7865b7ff5d-gcs4n.log)
+[itomdipulsar-broker-7865b7ff5d-8rglm.log](https://github.com/apache/pulsar/files/6314075/itomdipulsar-broker-7865b7ff5d-8rglm.log)
+
+
+
+
+

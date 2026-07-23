@@ -1,0 +1,27 @@
+NPE on TestPrefetch.testPrefetchWithDelay
+I'm seeing some failures on TestPrefetch.testPrefetchWithDelay in some pre-commit runs, I believe this is due to a race condition in PrefetchExecutor.
+loadConfiguration.
+In these failures, it seems we are getting the NPE below:
+{noformat}
+Stacktracejava.lang.NullPointerException
+	at java.util.concurrent.ConcurrentSkipListMap.put(ConcurrentSkipListMap.java:1580)
+	at org.apache.hadoop.hbase.io.hfile.PrefetchExecutor.request(PrefetchExecutor.java:108)
+	at org.apache.hadoop.hbase.io.hfile.PrefetchExecutor.lambda$loadConfiguration$0(PrefetchExecutor.java:206)
+	at java.util.concurrent.ConcurrentSkipListMap.forEach(ConcurrentSkipListMap.java:3269)
+	at org.apache.hadoop.hbase.io.hfile.PrefetchExecutor.loadConfiguration(PrefetchExecutor.java:200)
+	at org.apache.hadoop.hbase.regionserver.PrefetchExecutorNotifier.onConfigurationChange(PrefetchExecutorNotifier.java:51)
+	at org.apache.hadoop.hbase.io.hfile.TestPrefetch.testPrefetchWithDelay(TestPrefetch.java:378) {noformat}
+I think this is because we are completing prefetch in this test before the induced delay, then this test triggers a new configuration change, but the prefetch thread calls PrefetchExecutor.complete just before the test thread reaches [this point|https://github.com/apache/hbase/blob/master/hbase-server/src/main/java/org/apache/hadoop/hbase/io/hfile/PrefetchExecutor.java#L206]:
+{noformat}
+2024-10-01T11:28:10,660 DEBUG [Time-limited test {}] hfile.PrefetchExecutor(102): Prefetch requested for /home/jenkins/jenkins-home/workspace/Base-PreCommit-GitHub-PR_PR-6328/yetus-jdk8-hadoop2-check/src/hbase-server/target/test-data/b646497b-7616-6533-e8cb-98e5c9e2e083/TestPrefetchWithDelay/71eefdb271ae4f65b694a6ec3d4287a0, delay=25000 ms
+2024-10-01T11:28:30,668 INFO  [Time-limited test {}] hbase.Waiter(181): Waiting up to [10,000] milli-secs(wait.for.ratio=[1])
+2024-10-01T11:28:35,661 DEBUG [hfile-prefetch-1727782088576 {}] hfile.HFilePreadReader$1(103): No entry in the backing map for cache key 71eefdb271ae4f65b694a6ec3d4287a0_0. 
+...
+2024-10-01T11:28:35,673 DEBUG [hfile-prefetch-1727782088576 {}] hfile.HFilePreadReader$1(103): No entry in the backing map for cache key 71eefdb271ae4f65b694a6ec3d4287a0_52849. 
+2024-10-01T11:28:35,674 DEBUG [Time-limited test {}] hfile.PrefetchExecutor(142): Prefetch cancelled for /home/jenkins/jenkins-home/workspace/Base-PreCommit-GitHub-PR_PR-6328/yetus-jdk8-hadoop2-check/src/hbase-server/target/test-data/b646497b-7616-6533-e8cb-98e5c9e2e083/TestPrefetchWithDelay/71eefdb271ae4f65b694a6ec3d4287a0
+2024-10-01T11:28:35,674 DEBUG [hfile-prefetch-1727782088576 {}] hfile.PrefetchExecutor(121): Prefetch completed for 71eefdb271ae4f65b694a6ec3d4287a0
+2024-10-01T11:28:35,674 DEBUG [Time-limited test {}] hfile.PrefetchExecutor(102): Prefetch requested for /home/jenkins/jenkins-home/workspace/Base-PreCommit-GitHub-PR_PR-6328/yetus-jdk8-hadoop2-check/src/hbase-server/target/test-data/b646497b-7616-6533-e8cb-98e5c9e2e083/TestPrefetchWithDelay/71eefdb271ae4f65b694a6ec3d4287a0, delay=991 ms
+...
+{noformat}
+
+CC: [~kabhishek4]

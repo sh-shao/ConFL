@@ -1,0 +1,195 @@
+Thread blocked with drainHandler, writeQueueFull 
+POSTing many buffers to an echoing server gives thread blocked failures when we use drainHandler+writeQueueFull approach.
+
+The same POST with write and a completion handler does not.
+
+Write with handler is a much simpler strategy, but from documentation it's not clear whether it's an alternative for drainHandler. In any case we cannot explain our thread blocked problems with drainHandler.
+
+What's the best strategy for writing?
+
+### Environment
+
+Using vertx-core-4.0.0-milestone4 on Ubuntu 20.04 LTS amd64.
+
+### Reproducer
+
+Below is a unit test with test methods `drainHandler` and  `writeHandler`. Each test sends 10 times 2 GB to an echoing server (part of unit test).
+
+```
+import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientRequest;
+import io.vertx.core.http.HttpClientResponse;
+import io.vertx.core.streams.Pump;
+import io.vertx.core.streams.WriteStream;
+import io.vertx.ext.unit.Async;
+import io.vertx.ext.unit.TestContext;
+import io.vertx.ext.unit.junit.VertxUnitRunner;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import java.util.concurrent.atomic.AtomicLong;
+
+@RunWith(VertxUnitRunner.class)
+public class WriteTest {
+  Vertx vertx;
+  int port = 9210;
+
+  @Before
+  public void setUp(TestContext context) {
+    vertx = Vertx.vertx();
+    vertx.createHttpServer()
+        .requestHandler(h -> {
+          h.response().setChunked(true);
+          h.endHandler(x -> h.response().end());
+          Pump.pump(h, h.response()).start();
+        }).listen(port, context.asyncAssertSuccess());
+  }
+
+  @After
+  public void tearDown(TestContext context) {
+    vertx.close();
+  }
+
+  @Test
+  public void drainHandler(TestContext context) {
+    testUpload(context, true);
+  }
+
+  @Test
+  public void writeHandler(TestContext context) {
+    testUpload(context, false);
+  }
+
+  private void testUpload(TestContext context, boolean useDrain) {
+    int bufSz = 200000;
+    long bufCnt = 10000;
+    long total = bufSz * bufCnt;
+    HttpClient client = vertx.createHttpClient();
+    for (int loop = 0; loop < 10; loop++) {
+      System.out.println("Sending " + total / 1e9 + " GB");
+      Async async = context.async();
+      HttpClientRequest request = client.postAbs("http://localhost:" + port, res1 -> {
+        context.assertTrue(res1.succeeded());
+        HttpClientResponse res = res1.result();
+        context.assertEquals(200, res.statusCode());
+        AtomicLong cnt = new AtomicLong();
+        res.handler(h -> cnt.addAndGet(h.length()));
+        res.exceptionHandler(ex -> {
+          context.fail(ex);
+          async.complete();
+        });
+        res.endHandler(end -> {
+          context.assertEquals(total, cnt.get());
+          async.complete();
+        });
+      });
+      request.exceptionHandler(ex -> {
+        context.fail(ex.getCause());
+        async.complete();
+      });
+      request.putHeader("Content-Type", "text/plain");
+      request.setChunked(true);
+      Buffer buffer = Buffer.buffer();
+      for (int j = 0; j < bufSz; j++) {
+        buffer.appendString("X");
+      }
+      request.setWriteQueueMaxSize(16384);
+      if (useDrain) {
+        endRequestDrainHandler(request, buffer, 0, bufCnt);
+      } else {
+        endRequestWriteHandler(request, buffer, 0, bufCnt);
+      }
+      async.await(50000);
+    }
+  }
+
+  void endRequestWriteHandler(WriteStream<Buffer> req, Buffer buffer, long i, long cnt) {
+    if (i < cnt) {
+      req.write(buffer, res -> endRequestWriteHandler(req, buffer, i + 1, cnt));
+      return;
+    }
+    req.end();
+  }
+
+  void endRequestDrainHandler(WriteStream<Buffer> req, Buffer buffer, long i, long cnt) {
+    req.drainHandler(null);
+    while (i < cnt) {
+      req.write(buffer);
+      i++;
+      long next = i;
+      if (req.writeQueueFull()) {
+        req.drainHandler(res -> endRequestDrainHandler(req, buffer, next, cnt));
+        return;
+      }
+    }
+    req.end();
+  }
+}
+```
+
+### Output
+
+Example run:
+```
+mvn -Dtest=WriteTest#drainHandler test`
+
+Sending 2.0 GB
+Sending 2.0 GB
+12:44:27 WARN  ?                    Thread Thread[vert.x-eventloop-thread-6,5,main] has been blocked for 2662 ms, time limit is 2000 ms
+12:44:28 WARN  ?                    Thread Thread[vert.x-eventloop-thread-6,5,main] has been blocked for 3663 ms, time limit is 2000 ms
+12:44:29 WARN  ?                    Thread Thread[vert.x-eventloop-thread-6,5,main] has been blocked for 4663 ms, time limit is 2000 ms
+12:44:30 WARN  ?                    Thread Thread[vert.x-eventloop-thread-6,5,main] has been blocked for 5663 ms, time limit is 2000 ms
+io.vertx.core.VertxException: Thread blocked
+	at io.vertx.core.http.impl.Http1xClientConnection$StreamImpl.isNotWritable(Http1xClientConnection.java:383) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.writeQueueFull(HttpClientRequestImpl.java:221) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at WriteTest.endRequestDrainHandler(WriteTest.java:105) ~[test-classes/:?]
+	at WriteTest.lambda$endRequestDrainHandler$8(WriteTest.java:106) ~[test-classes/:?]
+	at WriteTest$$Lambda$98/596706728.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.handleDrained(HttpClientRequestImpl.java:344) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.http.impl.Http1xClientConnection$StreamImpl.handleWritabilityChanged(Http1xClientConnection.java:436) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.http.impl.Http1xClientConnection$$Lambda$74/255332034.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.impl.AbstractContext.emit(AbstractContext.java:183) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.impl.EventLoopContext.lambda$execute$0(EventLoopContext.java:42) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.impl.EventLoopContext$$Lambda$39/347978868.run(Unknown Source) ~[?:?]
+	at io.netty.util.concurrent.AbstractEventExecutor.safeExecute(AbstractEventExecutor.java:163) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(SingleThreadEventExecutor.java:510) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:518) ~[netty-transport-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor$6.run(SingleThreadEventExecutor.java:1044) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at java.lang.Thread.run(Thread.java:748) ~[?:1.8.0_252]
+12:44:31 WARN  ?                    Thread Thread[vert.x-eventloop-thread-6,5,main] has been blocked for 6664 ms, time limit is 2000 ms
+io.vertx.core.VertxException: Thread blocked
+	at io.vertx.core.http.impl.Http1xClientConnection$StreamImpl.isNotWritable(Http1xClientConnection.java:383) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.writeQueueFull(HttpClientRequestImpl.java:221) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at WriteTest.endRequestDrainHandler(WriteTest.java:105) ~[test-classes/:?]
+	at WriteTest.lambda$endRequestDrainHandler$8(WriteTest.java:106) ~[test-classes/:?]
+	at WriteTest$$Lambda$98/596706728.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.http.impl.HttpClientRequestImpl.handleDrained(HttpClientRequestImpl.java:344) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.http.impl.Http1xClientConnection$StreamImpl.handleWritabilityChanged(Http1xClientConnection.java:436) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.http.impl.Http1xClientConnection$$Lambda$74/255332034.handle(Unknown Source) ~[?:?]
+	at io.vertx.core.impl.AbstractContext.emit(AbstractContext.java:183) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.impl.EventLoopContext.lambda$execute$0(EventLoopContext.java:42) ~[vertx-core-4.0.0-milestone4.jar:4.0.0-milestone4]
+	at io.vertx.core.impl.EventLoopContext$$Lambda$39/347978868.run(Unknown Source) ~[?:?]
+	at io.netty.util.concurrent.AbstractEventExecutor.safeExecute(AbstractEventExecutor.java:163) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(SingleThreadEventExecutor.java:510) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:518) ~[netty-transport-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor$6.run(SingleThreadEventExecutor.java:1044) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) ~[netty-common-4.1.42.Final.jar:4.1.42.Final]
+	at java.lang.Thread.run(Thread.java:748) ~[?:1.8.0_252]
+```
+
+Running
+
+```
+mvn -Dtest=WriteTest#writeHandler test
+```
+
+always completes and memory usage is low.
+
+
+

@@ -1,0 +1,11 @@
+Race for Netty between cancel and stream creation
+AbstractClientStream.cancel won't cancel the stream on the wire if it appears the stream has not yet been allocated, as is described by the comment:
+
+``` java
+// Only send a cancellation to remote side if we have actually been allocated
+// a stream id and we are not already closed. i.e. the server side is aware of the stream.
+```
+
+However, what happens if this is the case, is that the transport is not notified of the stream destruction, and the stream will still eventually be created by the transport and not be cancelled. This issue does not seem a problem with the OkHttp transport, since it allocates the stream id before returning any newly created stream. However, Netty delays id allocation until just before the stream headers are sent, which 1) is always done asynchronously and 2) may be strongly delayed due to MAX_CONCURRENT_STREAMS.
+
+It appears that the optimization in AbstractClientStream should be removed outright and sendCancel's doc be updated to specify the expectation to handle such cases (as opposed to directly cause RST_STREAM). Both OkHttp and Netty seem to be handling such cases already. More importantly, the optimization seems highly prone for races given that id allocation is occurring in the transport thread whereas AbstractClientStream.cancel is happening on some application thread; using the normal synchronization between application and transport threads seems more than efficient enough and simpler.

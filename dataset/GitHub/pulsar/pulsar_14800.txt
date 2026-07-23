@@ -1,0 +1,134 @@
+metadata-store was blocked by pulsar-backlog-quota-checker
+**Describe the bug**
+A clear and concise description of what the bug is.
+
+
+```
+"pulsar-backlog-quota-checker-26-1" #182 prio=5 os_prio=0 tid=0x00007fd7acd80800 nid=0x6e23 waiting on condition [0x00007fd7abbf9000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000007558b7550> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:215)
+	at java.util.concurrent.CompletableFuture$Signaller.block(CompletableFuture.java:1695)
+	at java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3323)
+	at java.util.concurrent.CompletableFuture.timedGet(CompletableFuture.java:1775)
+	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:1915)
+	at org.apache.pulsar.broker.resources.BaseResources.get(BaseResources.java:87)
+	at org.apache.pulsar.broker.resources.NamespaceResources.getPolicies(NamespaceResources.java:110)
+	at org.apache.pulsar.broker.service.BacklogQuotaManager.getBacklogQuota(BacklogQuotaManager.java:71)
+	at org.apache.pulsar.broker.service.BacklogQuotaManager.lambda$getBacklogQuota$2(BacklogQuotaManager.java:90)
+	at org.apache.pulsar.broker.service.BacklogQuotaManager$$Lambda$1209/1707608741.get(Unknown Source)
+	at java.util.Optional.orElseGet(Optional.java:267)
+	at org.apache.pulsar.broker.service.BacklogQuotaManager.getBacklogQuota(BacklogQuotaManager.java:90)
+	at org.apache.pulsar.broker.service.BacklogQuotaManager.getBacklogQuotaLimitInTime(BacklogQuotaManager.java:106)
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.isTimeBacklogExceeded(PersistentTopic.java:2594)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$monitorBacklogQuota$79(BrokerService.java:1726)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$1091/1983064532.accept(Unknown Source)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$650/1079889805.accept(Unknown Source)
+	at java.util.Optional.ifPresent(Optional.java:159)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$forEachTopic$78(BrokerService.java:1711)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$649/1147294681.accept(Unknown Source)
+	at org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap$Section.forEach(ConcurrentOpenHashMap.java:413)
+	at org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap.forEach(ConcurrentOpenHashMap.java:185)
+	at org.apache.pulsar.broker.service.BrokerService.forEachTopic(BrokerService.java:1709)
+	at org.apache.pulsar.broker.service.BrokerService.monitorBacklogQuota(BrokerService.java:1720)
+	- locked <0x0000000680336df8> (a org.apache.pulsar.broker.service.BrokerService)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$228/1651372403.run(Unknown Source)
+	at org.apache.bookkeeper.mledger.util.SafeRun$1.safeRun(SafeRun.java:32)
+	at org.apache.bookkeeper.common.util.SafeRunnable.run(SafeRunnable.java:36)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+	at java.util.concurrent.FutureTask.runAndReset(FutureTask.java:308)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$301(ScheduledThreadPoolExecutor.java:180)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:294)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:748)
+```
+
+
+```
+"metadata-store-6-1" #130 prio=5 os_prio=0 tid=0x00007fd7f8008000 nid=0x6df1 waiting for monitor entry [0x00007fd7b206a000]
+   java.lang.Thread.State: BLOCKED (on object monitor)
+	at org.apache.pulsar.broker.service.BrokerService.setupTopicPublishRateLimiterMonitor(BrokerService.java:577)
+	- waiting to lock <0x0000000680336df8> (a org.apache.pulsar.broker.service.BrokerService)
+	at org.apache.pulsar.broker.service.AbstractTopic.updatePublishDispatcher(AbstractTopic.java:950)
+	at org.apache.pulsar.broker.service.AbstractTopic.updatePublishDispatcher(AbstractTopic.java:837)
+	at org.apache.pulsar.broker.service.AbstractTopic.updateMaxPublishRate(AbstractTopic.java:800)
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.onPoliciesUpdate(PersistentTopic.java:2493)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$null$91(BrokerService.java:1919)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$1302/128596005.accept(Unknown Source)
+	at java.util.Optional.ifPresent(Optional.java:159)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$null$92(BrokerService.java:1919)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$1301/1149594857.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniAccept(CompletableFuture.java:656)
+	at java.util.concurrent.CompletableFuture.uniAcceptStage(CompletableFuture.java:669)
+	at java.util.concurrent.CompletableFuture.thenAccept(CompletableFuture.java:1997)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$null$93(BrokerService.java:1914)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$1130/318872237.accept(Unknown Source)
+	at org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap$Section.forEach(ConcurrentOpenHashMap.java:413)
+	at org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap.forEach(ConcurrentOpenHashMap.java:185)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$handlePoliciesUpdates$94(BrokerService.java:1910)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda$1129/1443987335.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniAccept(CompletableFuture.java:656)
+	at java.util.concurrent.CompletableFuture$UniAccept.tryFire(CompletableFuture.java:632)
+	at java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:474)
+	at java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:1962)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore.lambda$null$7(ZKMetadataStore.java:139)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore$$Lambda$144/580735569.run(Unknown Source)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:748)
+```
+
+
+    public synchronized void setupTopicPublishRateLimiterMonitor()
+
+    public synchronized void monitorBacklogQuota() {
+
+there a lock of synchronized,two thread use the same block ,but  
+
+```
+ public synchronized void monitorBacklogQuota() {
+        forEachTopic(topic -> {
+            if (topic instanceof PersistentTopic) {
+                PersistentTopic persistentTopic = (PersistentTopic) topic;
+                if (persistentTopic.isSizeBacklogExceeded()) {
+                    getBacklogQuotaManager().handleExceededBacklogQuota(persistentTopic,
+                            BacklogQuota.BacklogQuotaType.destination_storage, false);
+                } else if (persistentTopic.isTimeBacklogExceeded()) {
+                    getBacklogQuotaManager().handleExceededBacklogQuota(persistentTopic,
+                            BacklogQuota.BacklogQuotaType.message_age,
+                            pulsar.getConfiguration().isPreciseTimeBasedBacklogQuotaCheck());
+                } else {
+                    if (log.isDebugEnabled()) {
+                        log.debug("quota not exceeded for [{}]", topic.getName());
+                    }
+                }
+            }
+        });
+    }
+```
+
+may hold long time,which will block metadata-store for all.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Go to '...'
+2. Click on '....'
+3. Scroll down to '....'
+4. See error
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+ - version 2.9
+
+**Additional context**
+Add any other context about the problem here.

@@ -1,0 +1,2 @@
+HTTP/1.x client connection pause/resume race
+The `Http1xClientConnection` is resumed and paused by the connection and individual streams. When those streams are dispatched on a different context than the connection context, there can be races due to miss notifications and the channel auto-read status remains paused preventing other HTTP streams to be received.

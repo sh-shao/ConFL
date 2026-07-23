@@ -1,0 +1,68 @@
+RExecutorService sometime will stuck and does not resume task anymore
+<!--
+Сonsider Redisson PRO https://redisson.pro version for advanced features and support by SLA.
+-->
+
+
+I am tring to use RExecutorService in my project.
+
+The test env connect to redis via VPN and the network is slow and unstable.
+
+In my test. sometimes the RExecutorService will stuck and does NOT resume task anymore.
+
+The RExecutorService is named : "redisson-web-online-test-DistSvc"
+
+The RExecutorService will store request in : `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}`
+
+and store task into `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:tasks`
+
+I found the `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}` is empty but the task in `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:tasks` does not processed and remain in `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:tasks` 
+
+relative data store in redis:
+`{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:counter` : 1
+`{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:retry-interval` : 60000
+`{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:scheduler` : 
+value=ff0013440745fec575af0b3bff9c3a9f71e3
+score=1630914700110
+
+`{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:tasks` :
+key : 0013440745fec575af0b3bff9c3a9f71e3
+
+
+attachement is the debug log for the test:
+
+[java_api.txt](https://github.com/redisson/redisson/files/7114229/java_api.txt)
+
+
+
+**Expected behavior**
+Task submit into RExecutorService being executed.
+
+**Actual behavior**
+
+The RExecutorService being stick and task remain in `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:tasks` .
+
+**Steps to reproduce or test case**
+1. Start my application
+2. after started , waiting for 5 minutes.
+3. submit task into RExecutorService
+4. the task does NOT executed and remain in `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:tasks`
+5. `{redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}` is empty
+6. value store in {redisson-web-online-test-DistSvc:org.redisson.executor.RemoteExecutorService}:counter is `1`
+
+**Redis version**
+5.0.6
+
+**Redisson version**
+3.16.1
+
+**Redisson configuration**
+        config.useSingleServer()
+                .setConnectionMinimumIdleSize(1) //
+                .setConnectionPoolSize(64) //
+                .setTimeout(2 * 1000)
+                .setConnectTimeout(2 * 1000)
+                .setIdleConnectionTimeout(10 * 1000)
+                .setKeepAlive(false)
+                .setRetryAttempts(1)
+                .setPingConnectionInterval(1 * 1000)

@@ -1,0 +1,11 @@
+Having a Key_Shared mode for functions
+**Is your feature request related to a problem? Please describe.**
+As functions can manipulate states, race conditions may occur if multiple instance of the same function are processed in parallel and update state for the same key. 
+
+**Describe the solution you'd like**
+having a Key_Shared mode for a function's instances - similar to Key_Shared subscription mode for consumers  - would provide the guarantee that only one function instance would run at any time for a given key
+
+**Describe alternatives you've considered**
+Another solution could be to have transactions enabled for states, but i'm not sure it's even possible with BookKeeper.
+
+**Additional context**

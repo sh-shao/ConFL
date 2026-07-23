@@ -1,0 +1,143 @@
+JWT Token builder bottleneck for internal communication
+After upgrade from 346 to 367 we started to experience significant performance issues. Number of currently running queries dropped from 120 to 30-70 (green line). Number of blocked queries increased from 0-1 to 10-50 (purple line).
+
+<img width="1036" alt="blocked-queries" src="https://user-images.githubusercontent.com/1793410/151980392-6faa0c0a-2f79-48d2-9933-3bbaf351b225.png">
+
+We analyzed Java Flight Recorder and Thread dumps from coordinator. JFR shows that `DefaultJwtBuilder.compact()` takes about 10% of CPU.
+
+![image](https://user-images.githubusercontent.com/1793410/151980796-8aebc4c7-ffbc-4f8f-a7dd-defb48e17af7.png)
+
+There is a method `LegacyService.loadFirst()` which is called during token generation and which is the most expensive:
+
+![image](https://user-images.githubusercontent.com/1793410/151981037-4fd15c43-b2fa-4905-9fa6-ae4fdf5fc5ad.png)
+
+According to source code of the library:
+
+https://github.com/jwtk/jjwt/blob/82189f8418d9bacad8b7df42a08ec203dc2df519/impl/src/main/java/io/jsonwebtoken/impl/DefaultJwtBuilder.java#L296-L301
+
+This method is called to lookup for `Serializer` if there is no default one. And it seems to do it by scanning jar files.
+Thread dump analysis showed that it's a bottleneck because 341 threads are blocked on `java.io.RandomAccessFile`:
+![image](https://user-images.githubusercontent.com/1793410/151982233-4c2e529a-f3bf-4c63-b186-d8daf09a74b5.png)
+
+Here is a stack trace of blocking thread:
+```
+ContinuousTaskStatusFetcher-20220201_082136_01542_tfn2d.2.45.0-2963
+Stack Trace is:
+java.lang.Thread.State: RUNNABLE
+at java.io.RandomAccessFile.seek0(java.base@11.0.12/Native Method)
+at java.io.RandomAccessFile.seek(java.base@11.0.12/RandomAccessFile.java:591)
+at java.util.zip.ZipFile$Source.readAt(java.base@11.0.12/ZipFile.java:1351)
+- locked <0x00007f943e81ecc8> (a java.io.RandomAccessFile)
+at java.util.zip.ZipFile$ZipFileInputStream.read(java.base@11.0.12/ZipFile.java:1029)
+- locked <0x00007fa893c23540> (a sun.net.www.protocol.jar.URLJarFile)
+at java.util.zip.ZipFile$ZipFileInflaterInputStream.fill(java.base@11.0.12/ZipFile.java:469)
+at java.util.zip.InflaterInputStream.read(java.base@11.0.12/InflaterInputStream.java:159)
+at java.io.InputStream.readNBytes(java.base@11.0.12/InputStream.java:490)
+at java.util.jar.JarFile.getBytes(java.base@11.0.12/JarFile.java:813)
+at java.util.jar.JarFile.checkForSpecialAttributes(java.base@11.0.12/JarFile.java:1013)
+- locked <0x00007fa893c23540> (a sun.net.www.protocol.jar.URLJarFile)
+at java.util.jar.JarFile.isMultiRelease(java.base@11.0.12/JarFile.java:390)
+at java.util.jar.JarFile.getEntry(java.base@11.0.12/JarFile.java:515)
+at sun.net.www.protocol.jar.URLJarFile.getEntry(java.base@11.0.12/URLJarFile.java:131)
+at sun.net.www.protocol.jar.JarURLConnection.connect(java.base@11.0.12/JarURLConnection.java:137)
+at sun.net.www.protocol.jar.JarURLConnection.getInputStream(java.base@11.0.12/JarURLConnection.java:155)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.parse(java.base@11.0.12/ServiceLoader.java:1165)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.nextProviderClass(java.base@11.0.12/ServiceLoader.java:1206)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.hasNextService(java.base@11.0.12/ServiceLoader.java:1221)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.hasNext(java.base@11.0.12/ServiceLoader.java:1265)
+at java.util.ServiceLoader$2.hasNext(java.base@11.0.12/ServiceLoader.java:1300)
+at java.util.ServiceLoader$3.hasNext(java.base@11.0.12/ServiceLoader.java:1385)
+at io.jsonwebtoken.impl.lang.Services.loadFirst(Services.java:110)
+at io.jsonwebtoken.impl.lang.Services.loadFirst(Services.java:100)
+at io.jsonwebtoken.impl.lang.LegacyServices.loadFirst(LegacyServices.java:21)
+at io.jsonwebtoken.impl.DefaultJwtBuilder.compact(DefaultJwtBuilder.java:300)
+at io.trino.server.InternalAuthenticationManager.generateJwt(InternalAuthenticationManager.java:122)
+at io.trino.server.InternalAuthenticationManager.filterRequest(InternalAuthenticationManager.java:112)
+at io.airlift.http.client.jetty.JettyHttpClient.applyRequestFilters(JettyHttpClient.java:679)
+at io.airlift.http.client.jetty.JettyHttpClient.executeAsync(JettyHttpClient.java:640)
+at io.trino.server.remotetask.ContinuousTaskStatusFetcher.scheduleNextRequest(ContinuousTaskStatusFetcher.java:156)
+- locked <0x00007fa4fdcd6af0> (a io.trino.server.remotetask.ContinuousTaskStatusFetcher)
+at io.trino.server.remotetask.ContinuousTaskStatusFetcher.success(ContinuousTaskStatusFetcher.java:176)
+at io.trino.server.remotetask.ContinuousTaskStatusFetcher.success(ContinuousTaskStatusFetcher.java:53)
+at io.trino.server.remotetask.SimpleHttpResponseHandler.onSuccess(SimpleHttpResponseHandler.java:49)
+at io.trino.server.remotetask.SimpleHttpResponseHandler.onSuccess(SimpleHttpResponseHandler.java:27)
+at com.google.common.util.concurrent.Futures$CallbackListener.run(Futures.java:1139)
+at io.airlift.concurrent.BoundedExecutor.drainQueue(BoundedExecutor.java:80)
+at io.airlift.concurrent.BoundedExecutor$$Lambda$12030/0x00007f8cbaad2040.run(Unknown Source)
+at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@11.0.12/ThreadPoolExecutor.java:1128)
+at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@11.0.12/ThreadPoolExecutor.java:628)
+at java.lang.Thread.run(java.base@11.0.12/Thread.java:829)
+```
+
+The situation on workers are similar, 73 threads are blocked on `java.io.RandomAccessFile`
+![image](https://user-images.githubusercontent.com/1793410/151982413-1cbaf597-3f1a-4430-888d-e4af561b5b89.png)
+
+StackTrace of blocking thread:
+
+```
+exchange-client-18
+Stack Trace is:
+java.lang.Thread.State: RUNNABLE
+at java.io.RandomAccessFile.seek0(java.base@11.0.14/Native Method)
+at java.io.RandomAccessFile.seek(java.base@11.0.14/RandomAccessFile.java:591)
+at java.util.zip.ZipFile$Source.readAt(java.base@11.0.14/ZipFile.java:1351)
+- locked <0x00007f4a48e3c618> (a java.io.RandomAccessFile)
+at java.util.zip.ZipFile$ZipFileInputStream.read(java.base@11.0.14/ZipFile.java:1029)
+- locked <0x00007f5e83b59b40> (a sun.net.www.protocol.jar.URLJarFile)
+at java.util.zip.ZipFile$ZipFileInflaterInputStream.fill(java.base@11.0.14/ZipFile.java:469)
+at java.util.zip.InflaterInputStream.read(java.base@11.0.14/InflaterInputStream.java:159)
+at java.io.InputStream.readNBytes(java.base@11.0.14/InputStream.java:490)
+at java.util.jar.JarFile.getBytes(java.base@11.0.14/JarFile.java:819)
+at java.util.jar.JarFile.checkForSpecialAttributes(java.base@11.0.14/JarFile.java:1019)
+- locked <0x00007f5e83b59b40> (a sun.net.www.protocol.jar.URLJarFile)
+at java.util.jar.JarFile.isMultiRelease(java.base@11.0.14/JarFile.java:392)
+at java.util.jar.JarFile.getEntry(java.base@11.0.14/JarFile.java:517)
+at sun.net.www.protocol.jar.URLJarFile.getEntry(java.base@11.0.14/URLJarFile.java:131)
+at sun.net.www.protocol.jar.JarURLConnection.connect(java.base@11.0.14/JarURLConnection.java:137)
+at sun.net.www.protocol.jar.JarURLConnection.getInputStream(java.base@11.0.14/JarURLConnection.java:155)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.parse(java.base@11.0.14/ServiceLoader.java:1165)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.nextProviderClass(java.base@11.0.14/ServiceLoader.java:1206)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.hasNextService(java.base@11.0.14/ServiceLoader.java:1221)
+at java.util.ServiceLoader$LazyClassPathLookupIterator.hasNext(java.base@11.0.14/ServiceLoader.java:1265)
+at java.util.ServiceLoader$2.hasNext(java.base@11.0.14/ServiceLoader.java:1300)
+at java.util.ServiceLoader$3.hasNext(java.base@11.0.14/ServiceLoader.java:1385)
+at io.jsonwebtoken.impl.lang.Services.loadFirst(Services.java:110)
+at io.jsonwebtoken.impl.lang.Services.loadFirst(Services.java:100)
+at io.jsonwebtoken.impl.lang.LegacyServices.loadFirst(LegacyServices.java:21)
+at io.jsonwebtoken.impl.DefaultJwtBuilder.compact(DefaultJwtBuilder.java:300)
+at io.trino.server.InternalAuthenticationManager.generateJwt(InternalAuthenticationManager.java:122)
+at io.trino.server.InternalAuthenticationManager.filterRequest(InternalAuthenticationManager.java:112)
+at io.airlift.http.client.jetty.JettyHttpClient.applyRequestFilters(JettyHttpClient.java:679)
+at io.airlift.http.client.jetty.JettyHttpClient.executeAsync(JettyHttpClient.java:640)
+at io.trino.operator.HttpPageBufferClient.sendGetResults(HttpPageBufferClient.java:339)
+- locked <0x00007f5b6c4b7b68> (a io.trino.operator.HttpPageBufferClient)
+at io.trino.operator.HttpPageBufferClient.initiateRequest(HttpPageBufferClient.java:330)
+- locked <0x00007f5b6c4b7b68> (a io.trino.operator.HttpPageBufferClient)
+at io.trino.operator.HttpPageBufferClient.lambda$scheduleRequest$0(HttpPageBufferClient.java:307)
+at io.trino.operator.HttpPageBufferClient$$Lambda$1624/0x00007f47418ee040.run(Unknown Source)
+at java.util.concurrent.Executors$RunnableAdapter.call(java.base@11.0.14/Executors.java:515)
+at java.util.concurrent.FutureTask.run(java.base@11.0.14/FutureTask.java:264)
+at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(java.base@11.0.14/ScheduledThreadPoolExecutor.java:304)
+at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@11.0.14/ThreadPoolExecutor.java:1128)
+at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@11.0.14/ThreadPoolExecutor.java:628)
+at java.lang.Thread.run(java.base@11.0.14/Thread.java:829)
+```
+
+To prove the issue we have changed the code of InternalAuthenticationManager
+https://github.com/trinodb/trino/blob/27728e6f5f5c9f7e1d61fd7653e7f9d6e98d08f4/core/trino-main/src/main/java/io/trino/server/InternalAuthenticationManager.java#L116-L133
+we added default serialzier
+```
+Jwts.builder()
+.serializeToJsonWith(new JacksonSerializer<>())
+```
+and deserializer
+```
+Jwts.builder()
+.deserializeJsonWith(new JacksonDeserializer<>())
+```
+
+It fixed our problem, running queries is ~120 and stable and there is no blocked.
+
+![image](https://user-images.githubusercontent.com/1793410/151985089-cb0e47cf-9b65-4493-a3da-d70aa54f82cd.png)
+
+`Jwts.builder()` is also used in OAuth2Service, FormWebUiAuthenticationFilter, JsonWebTokenHandler and may also cause some issues but we haven't investigated it.

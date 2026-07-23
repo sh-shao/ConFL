@@ -1,0 +1,54 @@
+HTTP client request/send/process flow
+The `HttpClient` returns `Future<HttpClientResponse>` in the API and such design can lead to racy situations. Rather than preventing this with a work-around we want instead to disable them by design at the expense of usability.
+
+```java
+Future<HttpClientResponse> get = client.get("some-uri");
+
+// Assuming we have a client that returns a future response
+// assuging this is *not* on the event-loop
+// introduce a potential data race for the sake of this example
+Thread.sleep(100);
+
+get.onSuccess(response -> {
+
+  // Response events might have happen already
+  response.body(ar -> {
+
+  });
+});
+```
+
+Instead we provide only the `request` method that returns a `Future<HttpClientRequest>` that helps to avoid such situation:
+
+```java
+Future<JsonObject> future = client
+  .request(HttpMethod.GET, "some-uri")
+  .compose(request -> request
+    .send()
+    .compose(response -> {
+      // Process the response on the event-loop which guarantees no races
+      if (response.statusCode() == 200 &&
+          response.getHeader(HttpHeaders.CONTENT_TYPE).equals("application/json")) {
+        return response
+          .body()
+          .map(buffer -> buffer.toJsonObject());
+      } else {
+        return Future.failedFuture("Incorrect HTTP response");
+      }
+    }));
+```
+
+Note the new `send` method which has been introduced to send a request (overloaded with a body) and lead to an `HttpClientResponse`. The `write`/`end` methods are considered lower level as they return async result only for their own operation as this is inherited from the `WriteStream` interface.
+
+NOTE 1: this is not a silver bullet and writing this can exhibit the same behavior
+
+```java
+Future<HttpClientResponse> future = client.request(HttpMethod.GET, "some-uri").compose(HttpClientRequest::send);
+
+// Facepalm ...
+```
+
+NOTE 2: when the client is confined within a Verticle then this behavior does not happen.
+
+NOTE 3: we clearly assume that users that want an high level API will or are already using the WebClient, however some users are using the `HttpClient` when they need low level operation and fine grained control (like writing a proxy).
+

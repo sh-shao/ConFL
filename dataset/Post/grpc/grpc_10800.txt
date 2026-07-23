@@ -1,0 +1,39 @@
+Unhandled java.lang.NullPointerException: bio == null in io.grpc.okhttp.internal.framed.Http2$Reader.close
+<!-- Please answer these questions before submitting a bug report. -->
+
+### What version of gRPC-Java are you using?
+1.47.0
+
+### What is your environment?
+<!-- operating system (Linux, Windows,...) and version, jdk version, etc. -->
+Android 8, 9, 10, 12.
+
+### What did you expect to see?
+When the underlying socket fails to close, possibly due to a race condition where it's already been closed, handle the thrown NPE. 
+
+### What did you see instead?
+An NPE is thrown and causes a crash.
+https://issuetracker.google.com/issues/177450597
+https://github.com/square/okhttp/pull/6533/files#diff-f88f9ac1ee194722f304572130663d2ba659e6e571fbc6dbfc6e639afe4003a4R502
+
+### Steps to reproduce the bug
+Stack from a production report haven't been able to reproduce locally.
+
+<!-- Make sure you include information that can help us debug (full error message, exception listing, stack trace, logs). -->
+```
+java.lang.NullPointerException: bio == null
+    at org.conscrypt.NativeCrypto.SSL_pending_written_bytes_in_BIO(NativeCrypto.java)
+    at org.conscrypt.NativeSsl$BioWrapper.getPendingWrittenBytes(NativeSsl.java:659)
+    at org.conscrypt.ConscryptEngine.pendingOutboundEncryptedBytes(ConscryptEngine.java:565)
+    at org.conscrypt.ConscryptEngineSocket.drainOutgoingQueue(ConscryptEngineSocket.java:568)
+    at org.conscrypt.ConscryptEngineSocket.close(ConscryptEngineSocket.java:464)
+    at org.conscrypt.ConscryptEngineSocket$SSLInputStream.close(ConscryptEngineSocket.java:732)
+    at okio.InputStreamSource.close(JvmOkio.kt:111)
+    at okio.AsyncTimeout$source$1.close(AsyncTimeout.kt:132)
+    at okio.RealBufferedSource.close(RealBufferedSource.kt:480)
+    at io.grpc.okhttp.internal.framed.Http2$Reader.close(Http2.java:370)
+    at io.grpc.okhttp.OkHttpClientTransport$ClientFrameHandler.run(OkHttpClientTransport.java:1104)
+    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1167)
+    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:641)
+    at java.lang.Thread.run(Thread.java:764)
+```

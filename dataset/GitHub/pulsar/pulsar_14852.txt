@@ -1,0 +1,50 @@
+The transaction thread continues consume CPU without any load
+**Describe the bug**
+
+This thread continues to consume the CPU without any load
+
+```
+"pulsar-transaction-executor-4-1" #91 prio=5 os_prio=0 cpu=121381.89ms elapsed=1882.48s tid=0x00007ff5ac123000 nid=0xb4 sleeping [0x00007ff5539ec000]
+   java.lang.Thread.State: TIMED_WAITING (sleeping)
+        at java.lang.Thread.sleep(java.base@11.0.11/Native Method)
+        at org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore$PendingAckReplay.run(MLPendingAckStore.java:349)
+        at java.util.concurrent.Executors$RunnableAdapter.call(java.base@11.0.11/Executors.java:515)
+        at java.util.concurrent.FutureTask.run(java.base@11.0.11/FutureTask.java:264)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(java.base@11.0.11/ScheduledThreadPoolExecutor.java:304)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@11.0.11/ThreadPoolExecutor.java:1128)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@11.0.11/ThreadPoolExecutor.java:628)
+        at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+        at java.lang.Thread.run(java.base@11.0.11/Thread.java:829)
+```
+
+The broker logs:
+
+```
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.830 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.831 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.832 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.833 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.835 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.836 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.837 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.838 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.840 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.841 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.842 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+org.apache.bookkeeper.mledger.ManagedLedgerException$CursorAlreadyClosedException: Cursor was already closed
+12:57:21.843 [pulsar-transaction-executor-4-1] ERROR org.apache.pulsar.broker.transaction.pendingack.impl.MLPendingAckStore - MLPendingAckStore of topic [public/default/persistent/source-topic-partition-15-test__transaction_pending_ack] stat reply fail!
+```
+
+**Additional context**
+latest branch-2.9

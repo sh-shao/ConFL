@@ -1,0 +1,37 @@
+ManagedChannel#enterIdle does not respect its documentation/javadoc
+### What version of gRPC-Java are you using?
+
+1.29.0
+
+### What is your environment?
+
+Linux (RHEL 7.6), Red Hat OpenJDK JRE 1.8.0.252
+
+### What did you expect to see?
+
+The javadoc of ManagedChannel#enterIdle says:
+
+> Invoking this method moves the channel into the IDLE state and triggers tear-down of the
+> channel's name resolver and load balancer, while still allowing on-going RPCs on the channel to
+> continue. New RPCs on the channel will trigger creation of a new connection.
+
+So I was expecting that if I do a RPC using the channel and then I am executing ManagedChannel#enterIdle while the call is still on-going, the channel would still go in idle mode.
+
+### What did you see instead?
+
+The channel does not go in idle mode.
+This is due to this fix: https://github.com/grpc/grpc-java/pull/4630 (_enterIdleMode() exits idle if still in use_)
+
+
+### Steps to reproduce the bug
+
+Execute a RPC call with a long deadline and then trigger enterIdle() on the channel while the call is still on-going. Check the state of the channel afterwards.
+
+### Comments
+
+I understand https://github.com/grpc/grpc-java/pull/4630 that it may be not possible to allow on-going RPCs without hitting some nasty race conditions. If so, I think then the javadoc of  ManagedChannel#enterIdle should be corrected to describe exactly the behavior because today it is at least very misleading (if not wrong).
+
+Thank you for all the good work on gRPC-java !
+
+Kind regards,
+Vincent

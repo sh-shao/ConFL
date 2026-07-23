@@ -1,0 +1,45 @@
+ConsumerBuilderImpl.subscribeAsync blocks calling thread
+**Describe the bug**
+When Retry topics are enabled, ConsumerBuilderImpl performs a backwards-compatibility check to look for DLQ or Retry topics that were created on previous version of Pulsar using a different naming scheme.
+
+It does this by calling `getPartitionedTopicMetadata` and then using `.get()` to block while waiting for the results
+
+```java
+if (client.getPartitionedTopicMetadata(oldRetryLetterTopic)
+        .get(client.conf.getOperationTimeoutMs(), TimeUnit.MILLISECONDS).partitions > 0) {
+    retryLetterTopic = oldRetryLetterTopic;
+}
+if (client.getPartitionedTopicMetadata(oldDeadLetterTopic)
+        .get(client.conf.getOperationTimeoutMs(), TimeUnit.MILLISECONDS).partitions > 0) {
+    deadLetterTopic = oldDeadLetterTopic;
+}
+```
+
+This was implemented in https://github.com/apache/pulsar/pull/10129
+A partial fix to add a Timeout was implemented in https://github.com/apache/pulsar/pull/11597
+
+However this fix does still block the calling thread during the lookup.
+
+This can be an issue for code that attempt to call `subscribeAsync` on a non-blocking Pool (such as when using Netty). The signature of `subscribeAsync` implies that it's non-blocking. (And it seems somewhat pointless to have `subscribeAsync` if it blocks anyway)
+
+Note that this is an undocumented *breaking* change in behavior. Up until 2.9, it was safe to call this from a non-blocking pool.
+
+In our case, we were running a custom SLF4J log exporter on the same thread pool, which resulted in a *deadlock* when the number of concurrent `subscribeAsync` calls exceeded the pool size. (This is probably an extreme example and a poor decision on our part, but perhaps a good example of why unexpected blocking can be dangerous)
+
+Note that blocking call is still made even if the retry and DLQ names are explicitly specified in DeadLetterPolicy. In that scenario the check should not be needed. Aside from blocking the calling Thread, this also results in unneeded lookup requests.
+
+**To Reproduce**
+Call `.subscribeAsync` with `enableRetry(true)`. The calling thread will be blocked until the metadata lookup is complete.
+
+**Expected behavior**
+`.subscribeAsync` should return a `CompletableFuture` immediately without performing any IO.
+
+**Proposed Fix**
+
+- Restructure `subscribeAsync` to chain the `getPartitionedTopicMetadata` calls rather than blocking
+- Don't perform the metadata lookup if the DLQ/Retry topic names are already specified
+- Add a flag to disable the compatibility check for projects that don't need it.
+
+If the project maintainer are happy with this proposal, I'm happy to raise a PR myself with the above change.
+
+

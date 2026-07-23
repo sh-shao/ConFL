@@ -1,0 +1,28 @@
+CPU usage 100% when use Key_Shared
+**Describe the bug**
+When use `Key_Shared`, if one consumer consume slowly and others are normal, `MessageRedeliveryController#messagesToRedeliver` will keep growing and could be very large.
+
+`MessageRedeliveryController#getMessagesToReplayNow` will be very expensive cause `messagesToRedeliver.items()` is a O(n) operation in both time and space complexity.
+https://github.com/apache/pulsar/blob/2b2e0c50183c71e954f5c6e8bfcd7e36130279a5/pulsar-broker/src/main/java/org/apache/pulsar/broker/service/persistent/MessageRedeliveryController.java#L109-L122
+
+In this situation, one thread cpu usage could be 100%, this could effects the publish latency of other topics on the same broker instance.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. start a standalone cluster
+2. start a producer
+```shell
+$ bin/pulsar-perf produce -mk random persistent://public/default/test
+```
+4. start a slow consumer and a normal consumer
+```shell
+$ bin/pulsar-perf consume -st Key_Shared persistent://public/default/test
+$ bin/pulsar-perf consume -st Key_Shared -r 0.1 persistent://public/default/test
+```
+
+**Screenshots**
+CPU flame graph
+![image](https://user-images.githubusercontent.com/5058708/166888460-8e70310e-3929-4c18-916d-431445e53ea7.png)
+
+**Additional context**
+- pulsar: `2.8.1`

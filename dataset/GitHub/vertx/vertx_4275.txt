@@ -1,0 +1,1 @@
+ConnectionBase exception handler should not be called within the synchronized block

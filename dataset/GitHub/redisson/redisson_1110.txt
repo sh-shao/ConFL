@@ -1,0 +1,33 @@
+RReadWriteLock reentry is incompatible
+This issue is related to #891.
+
+- write lock for 10 seconds
+- write lock for 1 second
+
+Now after 1 second the whole lock is released. I'm not sure if this is a bug, but logically the system should not unlock the because the first lock request is done for 10 seconds.
+
+`		
+		ExecutorService executor = Executors.newCachedThreadPool(new ThreadFactoryBuilder().setNameFormat("redis-%d").build());
+		RedissonClient client = Redisson.create(config);
+		
+		RReadWriteLock rw1 = client.getReadWriteLock("test2s3");
+		
+		RLock l1 = rw1.writeLock();
+		System.out.println(l1.tryLock(10000, 10000, TimeUnit.MILLISECONDS));
+		RLock l2 = rw1.writeLock();
+		System.out.println(l2.tryLock(1000, 1000, TimeUnit.MILLISECONDS));
+		executor.execute(()->{
+			RReadWriteLock rw2 = client.getReadWriteLock("test2s3");
+			try {
+				if (rw2.writeLock().tryLock(3000, 1000, TimeUnit.MILLISECONDS)) {
+					System.out.println("This is not expected!");
+				}
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		});
+		executor.shutdown();
+		executor.awaitTermination(10, TimeUnit.MINUTES);
+		client.shutdown();
+`
+Manually calling l2.unlock() manually works as expected, that is fixed in #891 

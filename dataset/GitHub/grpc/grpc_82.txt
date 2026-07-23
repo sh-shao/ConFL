@@ -1,0 +1,2 @@
+netty: Use DEFAULT_WORKER_EVENT_LOOP_GROUP for both client and server
+We have [separate thread pool](https://github.com/grpc/grpc-java/blob/master/netty/src/main/java/io/grpc/transport/netty/Utils.java#L71) for client workers vs server workers. We would be better suited by using a single worker thread pool for client and server (still likely having a separate boss thread pool on server). It would use fewer threads and reduce thrashing on a server that was also a busy client.

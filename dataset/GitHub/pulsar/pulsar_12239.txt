@@ -1,0 +1,17 @@
+Concurrent `delete subscription` and `delete topic` lead to memory leak
+**Describe the bug**
+Concurrent request `delete subscription` A and `delete topic` B will lead to leak `ManagerLedgerImpl`、`ManagerCursorImpl`、and any object related to them leak.
+That's the work flow
+
+### Step1 
+A delete the cursor `ledger.asyncDeleteCursor`, but don't remove the `subscription` from `ConcurrentOpenHashMap<String, PersistentSubscription> subscriptions;`
+### Step2
+Second, B delete the topic, as long as the `subscription` in `subscriptions`, B try to delete the cursor. Because of the `cursor` already been delete in `Step1`, delete topic failed
+### Step3
+A remove the `subscrption` from `subscriptions`
+
+That lead to memory leak, can't free  `ManagerLedgerImpl`、`ManagerCursorImpl`、and any object related to them.
+
+
+
+

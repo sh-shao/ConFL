@@ -1,0 +1,7 @@
+if waitTime == -1 and leaseTime != -1，multiple threads get the lock at the same time
+RedissonRedLock lock = new RedissonRedLock(lock1, lock2, lock3);
+boolean res = lock.tryLock(-1, 10, TimeUnit.SECONDS);
+
+if waitTime == -1  and leaseTime != -1，multiple threads get the lock at the same time
+
+Thank you

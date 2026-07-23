@@ -1,0 +1,3 @@
+Race condition in reconnection after managed ledger is fenced
+While checking the intermittent failures for `SequenceIdWithErrorTest`, I've seen that the test is 
+failing due to a race condition involving both producer and consumer reconnecting to the broker after the topic was fenced (in the case of the test, the fencing error is purposely inject).

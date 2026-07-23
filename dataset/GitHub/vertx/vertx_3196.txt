@@ -1,0 +1,2 @@
+HTTP/1 stream should synchronise when updating the connection stream
+Currently when sending the request the HTTP/1 stream will update the connection state without synchronisation which can lead to race conditions. We should synchronise properly so the other parts reading the state will see the correct state.

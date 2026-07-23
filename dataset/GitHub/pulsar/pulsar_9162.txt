@@ -1,0 +1,3 @@
+DLQProducer's creation condition check is incorrect
+When we check if we need to create producer for DLQ, we used double-checked locking, https://github.com/apache/pulsar/blame/master/pulsar-client/src/main/java/org/apache/pulsar/client/impl/ConsumerImpl.java#L701-L712
+however we should do the second check after we acquired the lock, and the field we're checking should be a volatile field.

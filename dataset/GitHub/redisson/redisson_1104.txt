@@ -1,0 +1,35 @@
+RFairLock dead lock issue
+Hi,
+I would like to report a locking issue we are seeing using redisson versions 3.3.2 to 3.5.4, using `RFairLock`.
+We have 3 instances of an application competing for a fair lock. After some time, the timeout of the fair lock queue gets set to a time many hours in the future, and no thread ever gets the lock.
+
+Here is what redis is reporting during one of the occurences - both commands ran at about 9:30AM PST on 10/17/2017 (`1508257800000`):
+```
+redis > zrange "redisson_lock_timeout:{mylock}" 0 99 WITHSCORES
+1) "3b9c4448-dfaa-4b4e-a691-cfee25458333:88"
+2) "1508278998141"
+3) "a8baa8c5-d42d-4912-9a1b-e72d0728ae88:90"
+4) "1508278998141"
+5) "17cd3d41-8ea1-44c7-b458-a530aff209f0:88"
+6) "1508279003141"
+```
+```
+redis > lrange "redisson_lock_queue:{mylock}" 0 99
+1) "17cd3d41-8ea1-44c7-b458-a530aff209f0:88"
+2) "3b9c4448-dfaa-4b4e-a691-cfee25458333:88"
+3) "a8baa8c5-d42d-4912-9a1b-e72d0728ae88:90"
+```
+
+You can see that the timeout (zscore of the timeout keys) is set about 6 hours in the future.
+```Current time = Tuesday, October 17, 2017 9:30:00.000 AM GMT-07:00 DST```
+```1508278998141 = Tuesday, October 17, 2017 3:23:18.141 PM GMT-07:00 DST```
+```1508279003141 = Tuesday, October 17, 2017 3:23:23.141 PM GMT-07:00 DST```
+
+So far, we haven't been able to reproduce the issue locally, but it is happening daily in our production environment. We are suspecting the problem is happening randomly when one of the application gets killed by the operating system (kill -9), something that can happen quite often due to the way we manage the apps.
+
+We were using redisson version 3.2.3 before, and never experienced the issue.
+Earlier this year, we tried updating to version 3.3.2 and started seeing the problem within a day or so. We reverted to 3.2.3, and waited for an updated version.
+Two days ago, we decided to upgrade to 3.5.4 assuming the problem was fixed, but it happened again within a few hours.
+I will keep on trying to reproduce the issue, but any help is appreciated.
+Thanks,
+Michael

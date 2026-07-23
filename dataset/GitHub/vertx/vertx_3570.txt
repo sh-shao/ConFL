@@ -1,0 +1,2 @@
+Evict local lock timed out waiters
+Shared data local lock maintains a list of waiters, entries are evicted from this list when on lock release. When a lock times out, it does not remove the entry from the list and instead relies on the cooperation of the lock owners to remove the entry from the list. We can improve this and evict the waiter from the waiters list when the timeout fires.

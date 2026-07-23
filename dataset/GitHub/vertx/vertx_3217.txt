@@ -1,0 +1,6 @@
+Duplicate context ordered task queue
+Currently duplicate contexts use the original ordered task queue of the original context. Concurrent duplicate worker context will have their task serialised on the same queue.
+
+Instead we need each duplicate to maintain its own queue so that worker context execution is serialised per duplicate to deliver the expected concurrency.
+
+This is also valid for duplicate event loop context using executeBlocking.

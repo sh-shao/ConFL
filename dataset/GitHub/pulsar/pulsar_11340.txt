@@ -1,0 +1,53 @@
+Extracted Pulsar Function jar file content in /tmp/pulsar-nar directory gets corrupted or overridden by different content
+**Describe the bug**
+
+By default, Pulsar Functions runtime extracts files of a Pulsar Function implementation jar file to a directory `/tmp/pulsar-nar/[function-jar-file-name].jar-unpacked` where the "function-jar-file-name" part is determined used a logic which doesn't produce unique file name.
+
+When the Pulsar Function is installed from a URL source over http/https, the filename seems to always be the short name of the package for the implementation class. 
+For example for a function class `com.github.lhotari.pulsar.RandomFilterFunction`, the filename becomes `pulsar.jar`. This filename would be the same for all function classes in the same package, regardless of the implementation classname or it's version.
+
+The logic is here:
+https://github.com/apache/pulsar/blob/3fcfb22e71c9774f710d659030d4af01eb05c956/pulsar-functions/worker/src/main/java/org/apache/pulsar/functions/worker/FunctionActioner.java#L548-L572
+
+The logic for extracting the Nar file is here:
+https://github.com/apache/pulsar/blob/c2e5ec6a5d4b4f21df37d1f2c9b878cf801d6f1a/pulsar-common/src/main/java/org/apache/pulsar/common/nar/NarUnpacker.java#L60-L85
+
+As it can be seen from this code, it leads to collisions when there are multiple jar files with the same name.
+Another problem can happen when 2 threads are in a race in extracting the nar file.
+It can lead to an error message such as this one in the Pulsar Functions instance log file:
+
+```
+07:20:38.336 [public/default/random-1-2] INFO  org.apache.pulsar.functions.instance.JavaInstanceRunnable - Load JAR: /tmp/pulsar_functions/public/default/random-1/2/pulsar.jar
+07:20:38.378 [public/default/random-1-2] WARN  org.apache.pulsar.common.nar.NarClassLoader - /tmp/pulsar-nar/pulsar.jar-unpacked does not contain META-INF/bundled-dependencies!
+07:20:38.378 [public/default/random-1-2] INFO  org.apache.pulsar.functions.instance.JavaInstanceRunnable - Initialize function class loader for function random-1 at function cache manager, functionClassLoader: org.apache.pulsar.common.nar.NarClassLoader[/tmp/pulsar-nar/pulsar.jar-unpacked]
+07:20:38.381 [public/default/random-1-2] ERROR org.apache.pulsar.functions.instance.JavaInstanceRunnable - [public/default/random-1:2] Uncaught exception in Java Instance
+java.lang.RuntimeException: User class must be in class path
+        at org.apache.pulsar.common.util.Reflections.createInstance(Reflections.java:112) ~[java-instance.jar:?]
+        at org.apache.pulsar.functions.instance.JavaInstanceRunnable.setup(JavaInstanceRunnable.java:197) ~[org.apache.pulsar-pulsar-functions-instance-2.7.2.1.1.0.jar:2.7.2.1.1.0]
+        at org.apache.pulsar.functions.instance.JavaInstanceRunnable.run(JavaInstanceRunnable.java:235) ~[org.apache.pulsar-pulsar-functions-instance-2.7.2.1.1.0.jar:2.7.2.1.1.0]
+        at java.lang.Thread.run(Thread.java:829) ~[?:?]
+Caused by: java.lang.ClassNotFoundException: com.github.lhotari.pulsar.RandomFilterFunction
+        at java.net.URLClassLoader.findClass(URLClassLoader.java:471) ~[?:?]
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:589) ~[?:?]
+        at java.lang.ClassLoader.loadClass(ClassLoader.java:522) ~[?:?]
+        at java.lang.Class.forName0(Native Method) ~[?:?]
+        at java.lang.Class.forName(Class.java:398) ~[?:?]
+        at org.apache.pulsar.common.util.Reflections.createInstance(Reflections.java:110) ~[java-instance.jar:?]
+        ... 3 more
+07:20:38.390 [public/default/random-1-2] INFO  org.apache.pulsar.functions.instance.JavaInstanceRunnable - Closing instance
+```
+
+
+**To Reproduce**
+Steps to reproduce the behavior:
+
+Install a function with process runtime with parallelism > brokers/function workers. This can reproduce the race condition when /tmp/pulsar-nar doesn't get include the `[function-jar-file-name].jar-unpacked` directory. It might require a few attempts to reproduce the issue.
+
+For example:
+```
+pulsar-admin functions create --tenant public --namespace default --name random-1 --parallelism 8 --inputs persistent://public/default/random-1-in --output persistent://amplitude/processing/random-2-in --jar https://github.com/lhotari/pulsar-issue-6054-repro/releases/download/v1.0/random-filter-function-1.0-SNAPSHOT.jar --ram 209715200 --classname com.github.lhotari.pulsar.RandomFilterFunction
+```
+
+**Expected behavior**
+
+Pulsar Functions loading shouldn't mix different function implementations by extracting them to the same directory. Race conditions should also be handled when the same function is started with multiple instances on the same node.

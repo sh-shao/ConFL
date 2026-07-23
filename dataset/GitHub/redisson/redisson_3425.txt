@@ -1,0 +1,76 @@
+Failed to cancel scheduled tasks and blocked threads
+**Expected behavior**
+Normal mission cancellation
+
+**Actual behavior**
+Failed to cancel the task and blocked the thread
+
+**Steps to reproduce or test case**
+```
+public class SchedulerServiceExamples {
+    private static final Logger LOG = LoggerFactory.getLogger(SchedulerServiceExamples.class);
+
+    public static void main(String[] args) throws InterruptedException {
+        Config config = new Config();
+        config.useSingleServer().setAddress("redis://127.0.0.1:6379");
+
+        RedissonClient redisson = Redisson.create(config);
+
+        RedissonNodeConfig nodeConfig = new RedissonNodeConfig(config);
+        nodeConfig.setExecutorServiceWorkers(Collections.singletonMap("myExecutor", 5));
+        RedissonNode node = RedissonNode.create(nodeConfig);
+        node.start();
+
+        RScheduledExecutorService e = redisson.getExecutorService("myExecutor");
+        String taskId = redisson.getExecutorService("myExecutor").schedule(new RunnableTask(), 2000, TimeUnit.MILLISECONDS).getTaskId();
+        Thread.sleep(5500);
+
+        LOG.info("xxxx start cancel task");
+        e.cancelTask(taskId);
+        LOG.info("yyyy end cancel task");
+
+        e.shutdown();
+        node.shutdown();
+    }
+
+    public static class RunnableTask implements Runnable, Serializable {
+
+        private static final Logger LOG = LoggerFactory.getLogger(RunnableTask.class);
+
+        @Override
+        public void run() {
+            LOG.info("Task start...");
+            try {
+                Thread.sleep(1000);
+                LOG.info("Task running 1 ...");
+                Thread.sleep(1000);
+                LOG.info("Task running 2 ...");
+                Thread.sleep(1000);
+                LOG.info("Task running 3 ...");
+                Thread.sleep(1000);
+                LOG.info("Task running 4 ...");
+            } catch (InterruptedException interruptedException) {
+                LOG.info("Task interruptedException");
+            }
+        }
+
+    }
+}
+```
+
+**Redis version**
+docker redis:3.2.11
+
+**Redisson version**
+3.13.0, 3.15.0
+
+**Redisson configuration**
+Default configuration
+
+
+When canceling a timed task, if the task is running, there is a chance that the task will not be canceled. If we use synchronous method to cancel the task, it will cause the current thread to block permanently, and the actual analysis shows that it will be in the `scheduleCheck` method.
+
+
+Related Logs
+[log.log](https://github.com/redisson/redisson/files/6007622/log.log)
+

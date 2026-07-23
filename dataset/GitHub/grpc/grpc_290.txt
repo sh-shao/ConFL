@@ -1,0 +1,12 @@
+Improve documentation of contract of io.grpc.Call
+This class seems to be underspecified. A couple of issues which can't be easily derived:
+- Can request(N) be called multiple times before the next payload is received, and is it accumulating.
+- If not accumulating, what does it mean if request(0) is called after request(N) but before payload is received. Does it suppress the already scheduled output? How strong is the contract that there are never more than N responses?
+- Can there be race conditions for request() calls and onPayload() calls on the listener.
+- Is request() always be called before sendPayload() or can it be also called afterwards.
+- What happens if any of the Call methods is called after halfClose, cancel, or onClose.
+- if cancel is called, should it eventually report onClose(Status.CANCELLED) on the listener.
+
+There might be more. Ideally we would specify the allowed sequences and interferences between call and listener.
+
+I may follow up with a suggestion for the spec later.

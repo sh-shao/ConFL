@@ -1,0 +1,31 @@
+Interrupted Exceptions are hidden under Unexpected exception
+If an `InterruptedException` is thrown while waiting for `RedissonBuckets.get`, redisson throws a  `RedisException` with the message `Unexpected exception while processing command`.
+
+**Expected behavior**
+If an interrupted exception is throw while waiting for `RedissonBuckets.get`, a `RedisException` wrapping the `InterruptedException` should be throw so the clients can implement proper error-handling.
+
+**Actual behavior**
+Exception that is not clear to pin-point the actual reason:
+```
+org.redisson.client.RedisException: Unexpected exception while processing command
+at org.redisson.command.CommandAsyncService.convertException (CommandAsyncService.java:351)
+at org.redisson.command.CommandAsyncService.get (CommandAsyncService.java:148)
+at org.redisson.RedissonBuckets.get (RedissonBuckets.java:62)
+at com.XXXXX.eventstream.metadata.redis.SingleRedisKeyValueStore.multiGet (SingleRedisKeyValueStore.java:42)
+at com.XXXXX.eventstream.metadata.redis.Redis.multiGet (Redis.java:126)
+at com.XXXXX.eventstream.metadata.redis.RedisPartitionManager.isReadyForReset (RedisPartitionManager.java:240)
+at com.XXXXX.eventstream.CommandDispatcher.stopStreamProviderOnReset (CommandDispatcher.java:264)
+at reactor.core.scheduler.PeriodicWorkerTask.call (PeriodicWorkerTask.java:59)
+at reactor.core.scheduler.PeriodicWorkerTask.run (PeriodicWorkerTask.java:73)
+at java.util.concurrent.Executors$RunnableAdapter.call (Executors.java:515)
+at java.util.concurrent.FutureTask.runAndReset (FutureTask.java:305)
+at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run (ScheduledThreadPoolExecutor.java:305)
+at java.util.concurrent.ThreadPoolExecutor.runWorker (ThreadPoolExecutor.java:1128)
+at java.util.concurrent.ThreadPoolExecutor$Worker.run (ThreadPoolExecutor.java:628)
+at java.lang.Thread.run (Thread.java:834)
+```
+**Steps to reproduce or test case**
+Interrupt the caller thread while invoking `RedissonBuckets.get`.
+
+**Redisson version**
+Reproduced on 3.13.6 and 3.14.1

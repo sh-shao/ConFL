@@ -1,0 +1,211 @@
+[Bug] Deadlock in Functions Worker service at shutdown in tests
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+current master 6ab322ed
+
+### Minimal reproduce step
+
+happens in PulsarFunctionTlsTest
+
+### What did you expect to see?
+
+no deadlocks
+
+### What did you see instead?
+
+a deadlock between threads
+
+### Anything else?
+
+jstack review UI for thread dump: https://jstack.review/?https://gist.github.com/lhotari/58eb0d30def7a316a28626aea8037c26#tda_1_dump
+Raw thread dump: https://gist.github.com/lhotari/58eb0d30def7a316a28626aea8037c26
+
+```
+Found one Java-level deadlock:
+=============================
+"main":
+  waiting for ownable synchronizer 0x0000100013535bc8, (a java.util.concurrent.locks.ReentrantLock$FairSync),
+  which is held by "worker-scheduler-0"
+
+"worker-scheduler-0":
+  waiting to lock monitor 0x00007f85944412f0 (object 0x000010001344c6d8, a org.apache.pulsar.functions.worker.LeaderService),
+  which is held by "pulsar-external-listener-44525-1"
+
+"pulsar-external-listener-44525-1":
+  waiting to lock monitor 0x00007f85182825a0 (object 0x0000100013535c90, a org.apache.pulsar.functions.worker.FunctionMetaDataManager),
+  which is held by "pulsar-web-44514-6"
+
+"pulsar-web-44514-6":
+  waiting to lock monitor 0x00007f85944412f0 (object 0x000010001344c6d8, a org.apache.pulsar.functions.worker.LeaderService),
+  which is held by "pulsar-external-listener-44525-1"
+
+Java stack information for the threads listed above:
+===================================================
+"main":
+	at jdk.internal.misc.Unsafe.park(java.base@17.0.8.1/Native Method)
+	- parking to wait for  <0x0000100013535bc8> (a java.util.concurrent.locks.ReentrantLock$FairSync)
+	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.8.1/LockSupport.java:211)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.8.1/AbstractQueuedSynchronizer.java:715)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.8.1/AbstractQueuedSynchronizer.java:938)
+	at java.util.concurrent.locks.ReentrantLock$Sync.lock(java.base@17.0.8.1/ReentrantLock.java:153)
+	at java.util.concurrent.locks.ReentrantLock.lock(java.base@17.0.8.1/ReentrantLock.java:322)
+	at org.apache.pulsar.functions.worker.SchedulerManager.close(SchedulerManager.java:744)
+	- locked <0x0000100013535af8> (a org.apache.pulsar.functions.worker.SchedulerManager)
+	at org.apache.pulsar.functions.worker.PulsarWorkerService.stop(PulsarWorkerService.java:623)
+	at org.apache.pulsar.functions.worker.PulsarFunctionTlsTest.tearDown(PulsarFunctionTlsTest.java:198)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(java.base@17.0.8.1/Native Method)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke(java.base@17.0.8.1/NativeMethodAccessorImpl.java:77)
+	at jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(java.base@17.0.8.1/DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(java.base@17.0.8.1/Method.java:568)
+	at org.testng.internal.invokers.MethodInvocationHelper.invokeMethod(MethodInvocationHelper.java:139)
+	at org.testng.internal.invokers.MethodInvocationHelper.invokeMethodConsideringTimeout(MethodInvocationHelper.java:69)
+	at org.testng.internal.invokers.ConfigInvoker.invokeConfigurationMethod(ConfigInvoker.java:361)
+	at org.testng.internal.invokers.ConfigInvoker.invokeConfigurations(ConfigInvoker.java:296)
+	at org.testng.internal.invokers.TestInvoker.runConfigMethods(TestInvoker.java:823)
+	at org.testng.internal.invokers.TestInvoker.runAfterConfigurations(TestInvoker.java:792)
+	at org.testng.internal.invokers.TestInvoker.invokeMethod(TestInvoker.java:768)
+	at org.testng.internal.invokers.TestInvoker.invokeTestMethod(TestInvoker.java:221)
+	at org.testng.internal.invokers.MethodRunner.runInSequence(MethodRunner.java:50)
+	at org.testng.internal.invokers.TestInvoker$MethodInvocationAgent.invoke(TestInvoker.java:969)
+	at org.testng.internal.invokers.TestInvoker.invokeTestMethods(TestInvoker.java:194)
+	at org.testng.internal.invokers.TestMethodWorker.invokeTestMethods(TestMethodWorker.java:148)
+	at org.testng.internal.invokers.TestMethodWorker.run(TestMethodWorker.java:128)
+	at org.testng.TestRunner$$Lambda$254/0x00007f854c23a680.accept(Unknown Source)
+	at java.util.ArrayList.forEach(java.base@17.0.8.1/ArrayList.java:1511)
+	at org.testng.TestRunner.privateRun(TestRunner.java:829)
+	at org.testng.TestRunner.run(TestRunner.java:602)
+	at org.testng.SuiteRunner.runTest(SuiteRunner.java:437)
+	at org.testng.SuiteRunner.runSequentially(SuiteRunner.java:431)
+	at org.testng.SuiteRunner.privateRun(SuiteRunner.java:391)
+	at org.testng.SuiteRunner.run(SuiteRunner.java:330)
+	at org.testng.SuiteRunnerWorker.runSuite(SuiteRunnerWorker.java:52)
+	at org.testng.SuiteRunnerWorker.run(SuiteRunnerWorker.java:95)
+	at org.testng.TestNG.runSuitesSequentially(TestNG.java:1256)
+	at org.testng.TestNG.runSuitesLocally(TestNG.java:1176)
+	at org.testng.TestNG.runSuites(TestNG.java:1099)
+	at org.testng.TestNG.run(TestNG.java:1067)
+	at org.apache.maven.surefire.testng.TestNGExecutor.run(TestNGExecutor.java:155)
+	at org.apache.maven.surefire.testng.TestNGDirectoryTestSuite.executeSingleClass(TestNGDirectoryTestSuite.java:102)
+	at org.apache.maven.surefire.testng.TestNGDirectoryTestSuite.executeLazy(TestNGDirectoryTestSuite.java:117)
+	at org.apache.maven.surefire.testng.TestNGDirectoryTestSuite.execute(TestNGDirectoryTestSuite.java:86)
+	at org.apache.maven.surefire.testng.TestNGProvider.invoke(TestNGProvider.java:137)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+"worker-scheduler-0":
+	at org.apache.pulsar.functions.worker.LeaderService.isLeader(LeaderService.java)
+	- waiting to lock <0x000010001344c6d8> (a org.apache.pulsar.functions.worker.LeaderService)
+	at org.apache.pulsar.functions.worker.SchedulerManager.lambda$scheduleInternal$0(SchedulerManager.java:208)
+	at org.apache.pulsar.functions.worker.SchedulerManager$$Lambda$2610/0x00007f854ce9d3b0.run(Unknown Source)
+	at java.util.concurrent.Executors$RunnableAdapter.call(java.base@17.0.8.1/Executors.java:539)
+	at java.util.concurrent.FutureTask.run(java.base@17.0.8.1/FutureTask.java:264)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@17.0.8.1/ThreadPoolExecutor.java:1136)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@17.0.8.1/ThreadPoolExecutor.java:635)
+	at java.lang.Thread.run(java.base@17.0.8.1/Thread.java:833)
+"pulsar-external-listener-44525-1":
+	at org.apache.pulsar.functions.worker.FunctionMetaDataManager.giveupLeadership(FunctionMetaDataManager.java)
+	- waiting to lock <0x0000100013535c90> (a org.apache.pulsar.functions.worker.FunctionMetaDataManager)
+	at org.apache.pulsar.functions.worker.LeaderService.becameInactive(LeaderService.java:167)
+	- locked <0x000010001344c6d8> (a org.apache.pulsar.functions.worker.LeaderService)
+	at org.apache.pulsar.client.impl.ConsumerImpl.lambda$activeConsumerChanged$27(ConsumerImpl.java:1136)
+	at org.apache.pulsar.client.impl.ConsumerImpl$$Lambda$2606/0x00007f854ce9cb10.run(Unknown Source)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@17.0.8.1/ThreadPoolExecutor.java:1136)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@17.0.8.1/ThreadPoolExecutor.java:635)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(java.base@17.0.8.1/Thread.java:833)
+"pulsar-web-44514-6":
+	at org.apache.pulsar.functions.worker.LeaderService.isLeader(LeaderService.java)
+	- waiting to lock <0x000010001344c6d8> (a org.apache.pulsar.functions.worker.LeaderService)
+	at org.apache.pulsar.functions.worker.SchedulerManager.scheduleInternal(SchedulerManager.java:200)
+	at org.apache.pulsar.functions.worker.SchedulerManager.schedule(SchedulerManager.java:229)
+	at org.apache.pulsar.functions.worker.FunctionMetaDataManager.updateFunctionOnLeader(FunctionMetaDataManager.java:251)
+	- locked <0x0000100013535c90> (a org.apache.pulsar.functions.worker.FunctionMetaDataManager)
+	at org.apache.pulsar.functions.worker.rest.api.ComponentImpl.internalProcessFunctionRequest(ComponentImpl.java:1775)
+	at org.apache.pulsar.functions.worker.rest.api.ComponentImpl.updateRequest(ComponentImpl.java:996)
+	at org.apache.pulsar.functions.worker.rest.api.FunctionsImpl.registerFunction(FunctionsImpl.java:222)
+	at org.apache.pulsar.broker.admin.impl.FunctionsBase.registerFunction(FunctionsBase.java:196)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(java.base@17.0.8.1/Native Method)
+	at jdk.internal.reflect.NativeMethodAccessorImpl.invoke(java.base@17.0.8.1/NativeMethodAccessorImpl.java:77)
+	at jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(java.base@17.0.8.1/DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(java.base@17.0.8.1/Method.java:568)
+	at org.glassfish.jersey.server.model.internal.ResourceMethodInvocationHandlerFactory.lambda$static$0(ResourceMethodInvocationHandlerFactory.java:52)
+	at org.glassfish.jersey.server.model.internal.ResourceMethodInvocationHandlerFactory$$Lambda$752/0x00007f854c6b6410.invoke(Unknown Source)
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher$1.run(AbstractJavaResourceMethodDispatcher.java:124)
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher.invoke(AbstractJavaResourceMethodDispatcher.java:167)
+	at org.glassfish.jersey.server.model.internal.JavaResourceMethodDispatcherProvider$VoidOutInvoker.doDispatch(JavaResourceMethodDispatcherProvider.java:159)
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher.dispatch(AbstractJavaResourceMethodDispatcher.java:79)
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.invoke(ResourceMethodInvoker.java:475)
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.apply(ResourceMethodInvoker.java:397)
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.apply(ResourceMethodInvoker.java:81)
+	at org.glassfish.jersey.server.ServerRuntime$1.run(ServerRuntime.java:255)
+	at org.glassfish.jersey.internal.Errors$1.call(Errors.java:248)
+	at org.glassfish.jersey.internal.Errors$1.call(Errors.java:244)
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:292)
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:274)
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:244)
+	at org.glassfish.jersey.process.internal.RequestScope.runInScope(RequestScope.java:265)
+	at org.glassfish.jersey.server.ServerRuntime.process(ServerRuntime.java:234)
+	at org.glassfish.jersey.server.ApplicationHandler.handle(ApplicationHandler.java:680)
+	at org.glassfish.jersey.servlet.WebComponent.serviceImpl(WebComponent.java:394)
+	at org.glassfish.jersey.servlet.WebComponent.service(WebComponent.java:346)
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:366)
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:319)
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:205)
+	at org.eclipse.jetty.servlet.ServletHolder.handle(ServletHolder.java:799)
+	at org.eclipse.jetty.servlet.ServletHandler$ChainEnd.doFilter(ServletHandler.java:1656)
+	at org.apache.pulsar.broker.web.AuthenticationFilter.doFilter(AuthenticationFilter.java:73)
+	at org.eclipse.jetty.servlet.FilterHolder.doFilter(FilterHolder.java:193)
+	at org.eclipse.jetty.servlet.ServletHandler$Chain.doFilter(ServletHandler.java:1626)
+	at org.eclipse.jetty.servlets.QoSFilter.doFilter(QoSFilter.java:202)
+	at org.eclipse.jetty.servlet.FilterHolder.doFilter(FilterHolder.java:193)
+	at org.eclipse.jetty.servlet.ServletHandler$Chain.doFilter(ServletHandler.java:1626)
+	at org.eclipse.jetty.servlet.ServletHandler.doHandle(ServletHandler.java:552)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:233)
+	at org.eclipse.jetty.server.session.SessionHandler.doHandle(SessionHandler.java:1624)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:233)
+	at org.eclipse.jetty.server.handler.ContextHandler.doHandle(ContextHandler.java:1440)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:188)
+	at org.eclipse.jetty.servlet.ServletHandler.doScope(ServletHandler.java:505)
+	at org.eclipse.jetty.server.session.SessionHandler.doScope(SessionHandler.java:1594)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:186)
+	at org.eclipse.jetty.server.handler.ContextHandler.doScope(ContextHandler.java:1355)
+	at org.eclipse.jetty.server.handler.ScopedHandler.handle(ScopedHandler.java:141)
+	at org.eclipse.jetty.server.handler.ContextHandlerCollection.handle(ContextHandlerCollection.java:234)
+	at org.eclipse.jetty.server.handler.HandlerCollection.handle(HandlerCollection.java:146)
+	at org.eclipse.jetty.server.handler.StatisticsHandler.handle(StatisticsHandler.java:181)
+	at org.eclipse.jetty.server.handler.HandlerWrapper.handle(HandlerWrapper.java:127)
+	at org.eclipse.jetty.server.Server.handle(Server.java:516)
+	at org.eclipse.jetty.server.HttpChannel.lambda$handle$1(HttpChannel.java:487)
+	at org.eclipse.jetty.server.HttpChannel$$Lambda$904/0x00007f854c9596e8.dispatch(Unknown Source)
+	at org.eclipse.jetty.server.HttpChannel.dispatch(HttpChannel.java:732)
+	at org.eclipse.jetty.server.HttpChannel.handle(HttpChannel.java:479)
+	at org.eclipse.jetty.server.HttpConnection.onFillable(HttpConnection.java:277)
+	at org.eclipse.jetty.io.AbstractConnection$ReadCallback.succeeded(AbstractConnection.java:311)
+	at org.eclipse.jetty.io.FillInterest.fillable(FillInterest.java:105)
+	at org.eclipse.jetty.io.ssl.SslConnection$DecryptedEndPoint.onFillable(SslConnection.java:555)
+	at org.eclipse.jetty.io.ssl.SslConnection.onFillable(SslConnection.java:410)
+	at org.eclipse.jetty.io.ssl.SslConnection$2.succeeded(SslConnection.java:164)
+	at org.eclipse.jetty.io.FillInterest.fillable(FillInterest.java:105)
+	at org.eclipse.jetty.io.ChannelEndPoint$1.run(ChannelEndPoint.java:104)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.runTask(EatWhatYouKill.java:338)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.doProduce(EatWhatYouKill.java:315)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.tryProduce(EatWhatYouKill.java:173)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.run(EatWhatYouKill.java:131)
+	at org.eclipse.jetty.util.thread.ReservedThreadExecutor$ReservedThread.run(ReservedThreadExecutor.java:409)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@17.0.8.1/ThreadPoolExecutor.java:1136)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@17.0.8.1/ThreadPoolExecutor.java:635)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(java.base@17.0.8.1/Thread.java:833)
+
+Found 1 deadlock.
+```
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

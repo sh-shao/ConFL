@@ -1,0 +1,73 @@
+Race condition in array_concat
+A query like:
+
+``` sql
+select count(x) from (
+    select concat(a, b) x 
+    from t
+)
+```
+
+where `a` and `b` are of type `array(map(string, double))`, fails non-deterministically with various exceptions (Presto version 0.144.2):
+
+```
+java.lang.IllegalStateException: closeEntry called before anything is written
+    at com.facebook.presto.spi.block.InterleavedBlockBuilder.closeEntry(InterleavedBlockBuilder.java:212)
+    at com.facebook.presto.spi.block.ArrayElementBlockWriter.closeEntry(ArrayElementBlockWriter.java:127)
+    at com.facebook.presto.spi.block.AbstractArrayBlock.writePositionTo(AbstractArrayBlock.java:155)
+    at com.facebook.presto.type.MapType.appendTo(MapType.java:192)
+    at com.facebook.presto.operator.scalar.ArrayConcatFunction.concat(ArrayConcatFunction.java:53)
+    at com_facebook_presto_$gen_CursorProcessor_37019.project_0(Unknown Source)
+    at com_facebook_presto_$gen_CursorProcessor_37019.process(Unknown Source)
+    at com.facebook.presto.operator.ScanFilterAndProjectOperator.getOutput(ScanFilterAndProjectOperator.java:215)
+    at com.facebook.presto.operator.Driver.processInternal(Driver.java:380)
+    at com.facebook.presto.operator.Driver.processFor(Driver.java:303)
+    at com.facebook.presto.execution.SqlTaskExecution$DriverSplitRunner.processFor(SqlTaskExecution.java:577)
+    at com.facebook.presto.execution.TaskExecutor$PrioritizedSplitRunner.process(TaskExecutor.java:529)
+    at com.facebook.presto.execution.TaskExecutor$Runner.run(TaskExecutor.java:665)
+    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+    at java.lang.Thread.run(Thread.java:745)
+```
+
+```
+Query 20160425_183530_20138_n949w failed: Expected current entry size to be exactly 0 but was 0
+java.lang.IllegalStateException: Expected current entry size to be exactly 0 but was 0
+    at com.facebook.presto.spi.block.ArrayBlockBuilder.beginBlockEntry(ArrayBlockBuilder.java:193)
+    at com.facebook.presto.spi.block.ArrayBlockBuilder.beginBlockEntry(ArrayBlockBuilder.java:24)
+    at com.facebook.presto.spi.block.AbstractArrayBlock.writePositionTo(AbstractArrayBlock.java:146)
+    at com.facebook.presto.type.MapType.appendTo(MapType.java:192)
+    at com.facebook.presto.operator.scalar.ArrayConcatFunction.concat(ArrayConcatFunction.java:53)
+    at com_facebook_presto_$gen_CursorProcessor_36742.project_0(Unknown Source)
+    at com_facebook_presto_$gen_CursorProcessor_36742.process(Unknown Source)
+    at com.facebook.presto.operator.ScanFilterAndProjectOperator.getOutput(ScanFilterAndProjectOperator.java:215)
+    at com.facebook.presto.operator.Driver.processInternal(Driver.java:380)
+    at com.facebook.presto.operator.Driver.processFor(Driver.java:303)
+    at com.facebook.presto.execution.SqlTaskExecution$DriverSplitRunner.processFor(SqlTaskExecution.java:577)
+    at com.facebook.presto.execution.TaskExecutor$PrioritizedSplitRunner.process(TaskExecutor.java:529)
+    at com.facebook.presto.execution.TaskExecutor$Runner.run(TaskExecutor.java:665)
+    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+    at java.lang.Thread.run(Thread.java:745)
+```
+
+```
+Query 20160425_183539_20170_n949w failed: Expected current entry size to be exactly 0 but was 1
+java.lang.IllegalStateException: Expected current entry size to be exactly 0 but was 1
+    at com.facebook.presto.spi.block.ArrayBlockBuilder.beginBlockEntry(ArrayBlockBuilder.java:193)
+    at com.facebook.presto.spi.block.ArrayBlockBuilder.beginBlockEntry(ArrayBlockBuilder.java:24)
+    at com.facebook.presto.spi.block.AbstractArrayBlock.writePositionTo(AbstractArrayBlock.java:146)
+    at com.facebook.presto.type.MapType.appendTo(MapType.java:192)
+    at com.facebook.presto.operator.scalar.ArrayConcatFunction.concat(ArrayConcatFunction.java:53)
+    at com_facebook_presto_$gen_CursorProcessor_37840.project_0(Unknown Source)
+    at com_facebook_presto_$gen_CursorProcessor_37840.process(Unknown Source)
+    at com.facebook.presto.operator.ScanFilterAndProjectOperator.getOutput(ScanFilterAndProjectOperator.java:215)
+    at com.facebook.presto.operator.Driver.processInternal(Driver.java:380)
+    at com.facebook.presto.operator.Driver.processFor(Driver.java:303)
+    at com.facebook.presto.execution.SqlTaskExecution$DriverSplitRunner.processFor(SqlTaskExecution.java:577)
+    at com.facebook.presto.execution.TaskExecutor$PrioritizedSplitRunner.process(TaskExecutor.java:529)
+    at com.facebook.presto.execution.TaskExecutor$Runner.run(TaskExecutor.java:665)
+    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+    at java.lang.Thread.run(Thread.java:745)
+```

@@ -1,0 +1,37 @@
+Client side NPE when sending large number of concurrent requests
+Both server and client use GRPC 1.0.
+Client log:
+
+```
+Exception in thread "grpc-default-executor-95" java.lang.NullPointerException: channel
+        at com.google.common.base.Preconditions.checkNotNull(Preconditions.java:228)
+        at io.grpc.netty.WriteQueue.<init>(WriteQueue.java:76)
+        at io.grpc.netty.NettyClientHandler.startWriteQueue(NettyClientHandler.java:223)
+        at io.grpc.netty.NettyClientTransport.start(NettyClientTransport.java:172)
+        at io.grpc.internal.ForwardingConnectionClientTransport.start(ForwardingConnectionClientTransport.java:45)
+        at io.grpc.internal.TransportSet.startNewTransport(TransportSet.java:215)
+        at io.grpc.internal.TransportSet.obtainActiveTransport(TransportSet.java:188)
+        at io.grpc.internal.ManagedChannelImpl$3.getTransport(ManagedChannelImpl.java:637)
+        at io.grpc.internal.ManagedChannelImpl$3.getTransport(ManagedChannelImpl.java:579)
+        at 
+......
+```
+
+Server log:
+
+```
+WARN  [2016-09-22 21:28:41,870] io.netty.channel.DefaultChannelPipeline: An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception. [client=null]
+! java.io.IOException: Too many open files in system
+! at sun.nio.ch.ServerSocketChannelImpl.accept0(Native Method) ~[na:1.8.0_60]
+! at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:422) ~[na:1.8.0_60]
+! at sun.nio.ch.ServerSocketChannelImpl.accept(ServerSocketChannelImpl.java:250) ~[na:1.8.0_60]
+! at io.netty.channel.socket.nio.NioServerSocketChannel.doReadMessages(NioServerSocketChannel.java:140) ~[netty.jar:4.1.5.Final]
+! at io.netty.channel.nio.AbstractNioMessageChannel$NioMessageUnsafe.read(AbstractNioMessageChannel.java:75) ~[netty.jar:4.1.5.Final]
+! at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:610) [netty.jar:4.1.5.Final]
+! at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:551) [netty.jar:4.1.5.Final]
+! at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:465) [netty.jar:4.1.5.Final]
+! at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:437) [netty.jar:4.1.5.Final]
+! at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:873) [netty.jar:4.1.5.Final]
+! at io.netty.util.concurrent.DefaultThreadFactory$DefaultRunnableDecorator.run(DefaultThreadFactory.java:144) [netty.jar:4.1.5.Final]
+! at java.lang.Thread.run(Thread.java:745) [na:1.8.0_60]
+```

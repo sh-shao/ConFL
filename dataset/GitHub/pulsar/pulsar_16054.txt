@@ -1,0 +1,21 @@
+Broker cache eviction evicts entries that haven't been read by active consumers
+**Describe the bug**
+
+There's a performance regression with large fan-outs (large number of consumers).
+
+#12045 changed cache eviction. The problem is that cache eviction is done to the position whatever happens to be the first cursor in the "heap" list in ManagedCursorContainer. There's a chance for a race condition: another cursor in the list might have an older position, but that hasn't been updated in the ordered data structure ("heap") when the method is called. The cache eviction will take the read position directly from the first cursor and it ignores and older positions.
+When the consumer for the other cursor does a read, the entries are no more in the cache and there will be a cache miss. 
+
+**To Reproduce**
+
+It should be possible to reproduce this in a multi-consumer scenario where the speed of the consumers varies.
+
+**Expected behavior**
+
+Cache eviction should properly consider all active consumers. This was the state before #12045 and #14985 changes.
+
+**Additional context**
+#12045, #14985, #16049
+
+This impacts all maintenance branches since #12045 was cherry-picked to branch-2.7 (2.7.4), branch-2.8 (2.8.2) and branch-2.9 (2.9.0) at the time.
+

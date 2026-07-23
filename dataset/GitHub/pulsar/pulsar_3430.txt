@@ -1,0 +1,31 @@
+Created a partitioned topic and a non-partitioned topic with same name
+**Describe the bug**
+Created a partitioned topic and a non-partitioned topic with same name, which should fail. but got success. reported by user @bilahepan
+
+**To Reproduce**
+This seems a race condition and not able to reproduce easily.
+
+This is meet like this steps:
+1. Start to produce data:
+```
+sudo -u docker ./bin/pulsar-client  produce persistent://my-tenant/my-namespace/my-topic-test -m "hello-pulsar”
+```
+And this will create a non-partitioned topic automatically.
+
+2. create a partitioned topic with same name:(this in my test will not success, but in the online environment, it got success)
+```
+./bin/pulsar-admin topics  create-partitioned-topic  persistent://my-tenant/my-namespace/my-topic-test -p 20
+```
+
+3. Could consume data produced by this command:
+```
+./bin/pulsar-client  produce persistent://my-tenant/my-namespace/my-topic-test -m "hello-pulsar-1”
+ ```
+but not able to consume data by:
+```
+./bin/pulsar-client  produce persistent://my-tenant/my-namespace/my-topic-test-partition-10 -m "hello-pulsar"
+```
+
+**Screenshots**
+![image](https://user-images.githubusercontent.com/6348208/51723987-38b3c700-2096-11e9-8ae4-4f1704d6d111.png)
+

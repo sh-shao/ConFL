@@ -1,0 +1,148 @@
+RedissonList's Iterator Race Conditions
+RedissonList iterator as it tries to keep "up to date" with data has a race condition in which if between the .hasNext() and the .next() call the set is emptied the list will throw NoSuchElementException.
+
+---
+## Unit Test
+
+private static final String LIST_NAME = "TEST_LIST";
+private static boolean failed;
+
+```
+@Ignore
+class Delete implements Runnable {
+
+    public void run() {
+        // remove one item
+        RList<Object> list = redisson.getList(LIST_NAME);
+        if (!list.isEmpty()) {
+            Iterator<Object> iter = list.iterator();
+            if (iter.hasNext()) {
+                iter.next();
+                iter.remove();
+            }
+        }
+    }
+}
+
+@Ignore
+class Add implements Runnable {
+    int i = 0;
+
+    public void run() {
+        // add items up to place up to one in list
+        RList<Object> list = redisson.getList(LIST_NAME);
+        if (list.isEmpty()) {
+            list.add("Entry:" + (i++));
+
+        }
+    }
+}
+
+@Ignore
+class Loop implements Runnable {
+    public void run() {
+        try {
+            RList<Object> list = redisson.getList(LIST_NAME);
+            if (!list.isEmpty()) {
+                // implicit iterator
+                for (@SuppressWarnings("unused")
+                Object o : list) {
+                }
+            }
+        } catch (Exception e) {
+            RedissonListTest.failed = true;
+            e.printStackTrace();
+        }
+    }
+}
+
+class ThousandAndOneThread extends Thread {
+    public ThousandAndOneThread(Runnable r) {
+        this.r = r;
+    }
+
+    boolean dead = false;
+    int nightsLeft = 1001;
+    Runnable r;
+
+    public void run() {
+        // while shahrazad still is alive
+        while (!dead && nightsLeft > 0) {
+            nightsLeft--;
+
+            // do runnable
+            r.run();
+
+            // take a nap
+            try {
+                Thread.sleep(3);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                break;
+            }
+        }
+
+        dead = true;
+    }
+
+    // Kill shahrazad
+    public void kill() {
+        dead = true;
+    }
+
+    // if i am done
+    public boolean isDone() {
+        return dead;
+    }
+}
+
+@Test
+public void testIteratorAfterDelete() {
+    for (int i = 0; i < 4; i++) {
+        // make runnables
+        Delete d = new Delete();
+        Add a = new Add();
+        Loop l = new Loop();
+
+        // make threads
+        ThousandAndOneThread aT = new ThousandAndOneThread(a);
+        ThousandAndOneThread dT = new ThousandAndOneThread(l);
+        ThousandAndOneThread lT = new ThousandAndOneThread(d);
+
+        // start threads
+        aT.start();
+        dT.start();
+        lT.start();
+
+        // monitor threads
+        while (true) {
+            if (failed) {
+                fail("Exception occured, in child thread");
+            }
+            if (lT.isDone() || dT.isDone() || aT.isDone()) {
+                System.out.println("All done!" + i);
+                aT.kill();
+                dT.kill();
+                lT.kill();
+                break;
+            }
+            try {
+                Thread.sleep(10);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                aT.kill();
+                dT.kill();
+                lT.kill();
+                fail("fail on " + i);
+            }
+        }
+    }
+}
+```
+
+---
+## Additional Information
+
+This also effects RedissonSet, but much less likely to hit the race condition. It causes RedissonSet line 96 to throw a null pointer exception. 
+
+This is akin to issue #104 

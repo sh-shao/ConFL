@@ -1,0 +1,26 @@
+RedissonKeys.Delete() method pass empty array will block the thread in redis cluster
+**Expected behavior**
+
+Exception throws like single redis server
+
+**Actual behavior**
+
+In cluster mode, this method will block the thread and no exception throws
+![image](https://user-images.githubusercontent.com/53299748/130041111-797fede6-1ed1-48a8-94a9-69c40369a752.png)
+
+![image](https://user-images.githubusercontent.com/53299748/130041203-0513fcec-91e4-4006-82ff-d51ece21238f.png)
+
+**Steps to reproduce or test case**
+
+        Config config = new Config();
+        config.useClusterServers().addNodeAddress("redisUrl").setPassword("Password");
+        RedissonClient redissonClient = Redisson.create(config);
+        ArrayList<Object> redisKeys = new ArrayList<>();
+        Redisson.create(config).getKeys().delete(redisKeys.toArray(new String[0]));
+        redissonClient.shutdown();
+
+**Redis version**
+6.2.4
+**Redisson version**
+3.16.1
+**Redisson configuration**

@@ -1,0 +1,18 @@
+Java consumer can block forever on batchReceive
+**Describe the bug**
+When `Consumer.batchReceive()` is called concurrently by different threads there exists a race condition in `ConsumerBase.java` which when triggered causes a CompletableFuture in the queue `pendingBatchReceives` to be removed from the queue but not completed, causing the consumer to block forever.
+
+The issue is that there are concurrent calls to peek and poll in `peekNextBatchReceive` and the code is only correct when what is peeked is polled. If another thread calls poll between a peek and poll then this bug occurs. There is an error message when this occurs `Bug: Removed entry wasn't the expected one`. 
+
+**To Reproduce**
+
+1. Create a consumer
+2. On many threads, repeatedly call `batchReceive`
+3. Wait potentially a very long time, but eventually it will block forever.
+
+I added a Thread sleep between the peek and poll of `peekNextBatchReceive` to make it trigger faster.
+
+**Expected behavior**
+`batchReceive` should never block forever.
+
+I have a fix on the way.

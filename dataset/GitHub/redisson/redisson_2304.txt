@@ -1,0 +1,42 @@
+threads blocked waiting on CountDownLatch
+Hello,
+
+We are facing an an issue where some threads get blocked indefinitely waiting on the CountDownLatch in `CommandAsyncService.get()`. Relevant section of the thread dump:
+```
+- waiting on java.util.concurrent.CountDownLatch$Sync@1f2311a9
+at java.util.concurrent.locks.LockSupport.park(LockSupport.java: at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:
+at java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly(AbstractQueuedSynchronizer.java:
+at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(AbstractQueuedSynchronizer.java:
+at java.util.concurrent.CountDownLatch.await(CountDownLatch.java:232)
+at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:186)
+...
+```
+The reason for why the requests aren't able to complete isn't relevant here (we are deploying redis in kubernetes, and are working through various upgrade/failure scenarios that currently can result in severed connections). However, it's strange to me that the `CommandAsyncService.get()` method doesn't respect timeout configuration, and simply calls `l.await()`.
+Is there any way around this? Please let me know if I am misunderstanding the situation.
+
+### Expected behavior
+`CommandAsyncService.get()` should throw an exception if the future is unable to complete within a timeout.
+
+### Actual behavior
+Many threads are hanging indefinitely in the `CommandAsyncService.get()` method.
+
+### Redis version
+5.0.5
+
+### Redisson version
+3.10.7
+
+### Redisson configuration
+nettyThreads=16
+masterConnectionPoolSize=200
+masterConnectionMinimumIdleSize=100
+subscriptionConnectionPoolSize=200
+subscriptionConnectionMinimumIdleSize=100
+subscriptionsPerConnection=10
+connectionTimeout=10000
+retryInterval=3000
+retryAttempts=10
+keepAlive=true
+tcpNoDelay=true
+clusterScanInterval=2000
+pingConnectionInterval=10000

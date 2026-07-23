@@ -1,0 +1,31 @@
+[grpc-servlet] Race condition in AsyncServletOutputStreamWriter
+### What version of gRPC-Java are you using?
+1.71.0
+
+### What is your environment?
+MacOS 15.6
+openjdk version "17.0.14" 2025-01-21 LTS
+OpenJDK Runtime Environment Corretto-17.0.14.7.1 (build 17.0.14+7-LTS)
+OpenJDK 64-Bit Server VM Corretto-17.0.14.7.1 (build 17.0.14+7-LTS, mixed mode, sharing)
+
+### What did you expect to see?
+In gRPC servlet, https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L228 ensures that https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L207 can continue processing.
+
+### What did you see instead?
+Nevertheless, there's a race condition where https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L207 parks for 1h (ie, https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L228 did not unpark the thread)
+
+### Steps to reproduce the bug
+This bug is really hard to reproduce (1 out 1 million calls fails).
+But here is the analysis:
+
+Thread#1
+https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L225
+returns false. As per the servlet specification, https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L174 is called on Thread#2.
+Then, thread#2 continues (while thread#1 is not scheduled) to https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L203 where the condition returns true.
+Then thread#1 becomes scheduled (while Thread#2 is not) and continues to https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L228 where parkingThread is null because Thread#2 did not yet got to https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L204
+Then thread#2 arrives at https://github.com/grpc/grpc-java/blob/06707f7c38068d9e933f6d03811255f481a0abe9/servlet/src/main/java/io/grpc/servlet/AsyncServletOutputStreamWriter.java#L207 while Thread#1 has unparked a null thread.
+Thread#2 is then blocked for 1h.
+
+I hope the steps are clear.
+
+Thanks !

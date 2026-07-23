@@ -1,0 +1,22 @@
+Deadlock in ASyncFileImpl/PipeImpl (using vertx-web-client and request.sendStream(asyncFile))
+Hi,
+
+Using vertx 3.8.1
+Using something like (kotlin+coroutine) :
+
+        val props = vertx.fileSystem().propsAwait(path)
+        val file = vertx.fileSystem().openAwait(path, openOptionsOf(read = true))
+        val response = client.post(4443, "localhost", "/endpoint")
+                    .putHeader("content-length", props.size().toString())
+                    .sendStreamAwait(file)
+
+It happens that the call never return, but it's random (Never when I tried to extract a reproducer, almost always in the real context, of course).
+
+To investigate, I've copied `PipeImpl` and `ASyncFileImpl` and added some trace. (Modified version in attached files with output)
+
+It's seems like at some time, something has kept the monitor of `ASyncFileImpl` instance, preventing the `resume` call  to execute the method.
+
+
+[AsyncFileImpl.java.txt](https://github.com/eclipse-vertx/vert.x/files/3685925/AsyncFileImpl.java.txt)
+[PipeImpl.java.txt](https://github.com/eclipse-vertx/vert.x/files/3685926/PipeImpl.java.txt)
+[output.txt](https://github.com/eclipse-vertx/vert.x/files/3685918/output.txt)

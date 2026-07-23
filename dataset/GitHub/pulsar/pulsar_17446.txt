@@ -1,0 +1,53 @@
+[Bug] Producer may be permanently blocked by chunking messages when blockIfQueueFull is enabled
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+Pulsar 2.11
+
+### Minimal reproduce step
+
+It can be reproduced simply by following.
+```
+  @Test
+  public void testMiniChunkingBlockIfQueueFull() throws Exception {
+      this.conf.setMaxMessageSize(1000);
+
+      final String topicName = "persistent://my-property/my-ns/testChunkingWithOrderingKey";
+
+      final ExecutorService exec = Executors.newFixedThreadPool(1);
+
+      @Cleanup
+      Producer<byte[]> producer = pulsarClient.newProducer().topic(topicName).enableChunking(true)
+              .chunkMaxMessageSize(1)
+              .blockIfQueueFull(true)
+              .maxPendingMessages(1000)
+              .enableBatching(false).create();
+
+      byte[] data = RandomUtils.nextBytes(1001);
+      producer.newMessage().value(data).send();
+  }
+```
+
+### What did you expect to see?
+
+The reason for this bug is how the chunk message semaphore is obtained.
+https://github.com/apache/pulsar/blob/359cfa7bc05775bf6dd004f21b9907610ed3b3d5/pulsar-client/src/main/java/org/apache/pulsar/client/impl/ProducerImpl.java#L520-L527
+When a large message is split into a large number of chunks (i.e. the message is too big or the `chunkMaxMessageSize` is set too small), all the remaining semaphores will be acquired. The sending (send() and sendAsync()) of large message will be blocked by itself forever.
+
+By the way, once blockIfQueueFull/maxPendingMessages/chunking are enabled at the same time, this risk of deadlock exists even if the number of chunks of a single message is not very large.
+
+### What did you see instead?
+
+//
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [X] I'm willing to submit a PR!

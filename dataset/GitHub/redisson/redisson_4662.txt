@@ -1,0 +1,36 @@
+TryLock CancellationException issue
+hello,
+
+i met a problem, i have about 200 instances try get a distribute lock by use redisson client, 
+and one instances will occur CancellationException after running a period time,  and can not recover. 
+
+version: 3.17.6
+server: aws elasticahe redis cluster
+
+java.util.concurrent.CancellationException
+    at java.base/java.util.concurrent.CompletableFuture.cancel(CompletableFuture.java:2468)
+    at org.redisson.RedissonLock.tryLock(RedissonLock.java:235)
+
+
+code as below:
+` 
+
+       RLock lock;
+        try {
+            lock = redissonService.getRedissonClient().getLock(LEASE_COORDINATOR_LOCK_KEY);
+
+            if (!lock.tryLock(3_000, 60_000, TimeUnit.MILLISECONDS)) {
+                //log something
+                return;
+            }
+
+            //do something....
+
+        } catch (InterruptedException e) {
+            //log something
+        } catch (Exception e) {
+            //log something
+        } finally {
+            //here ignore unlock to ensure execute only once in specific period time
+            //lock.unlock();
+        }`

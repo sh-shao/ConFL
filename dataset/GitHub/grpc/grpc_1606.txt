@@ -1,0 +1,4 @@
+Message serialization occurs on transport thread
+`TransportSet` is calling `setTransport()` [from the `transportReady` notification](https://github.com/grpc/grpc-java/blob/a40b686891920b825171ed90c81fc36d962e75d1/core/src/main/java/io/grpc/internal/TransportSet.java#L338). `setTransport()` eventually ends up [serializing messages](https://github.com/grpc/grpc-java/blob/eccd231/core/src/main/java/io/grpc/internal/DelayedStream.java#L86). This means we are 1) running application-provided code on the transport thread and 2) performing expensive operations on the transport thread. We need to figure out a way to avoid serializing on the transport thread.
+
+One type of option is to use an executor for `setTransport()`. Another type of option would be to actually serialize the message within `DelayedStream`.

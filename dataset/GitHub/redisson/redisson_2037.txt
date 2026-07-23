@@ -1,0 +1,18 @@
+RedissonLock.renewExpiration will refresh forever
+### Expected behavior
+
+If the lock key no longer exist the refresh should cease
+
+### Actual behavior
+
+The renewExpiration() method ignores the return value of renewExpirationAsync() and reschedules itself forever
+
+### Steps to reproduce or test case
+
+Should be as simple as manually removing a lock entry key from redis.
+
+### Redisson version
+
+3.10.6
+
+On a side note, another thing we noticed while looking into this is that renewExpirationAsync() does a scripted call that returns 0 or 1 depending on HEXISTS. It seems unnecessary as according to the redis docs about PEXPIRE, it does the same thing out of the box in a single command call (https://redis.io/commands/pexpire).

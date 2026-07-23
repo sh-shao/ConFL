@@ -1,0 +1,38 @@
+[Bug] Key_Shared subscription doesn't always deliver messages from the replay queue after a consumer disconnects and leaves a backlog unless new messages are produced
+### Search before asking
+
+- [x] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Read release policy
+
+- [x] I understand that unsupported versions don't get bug fixes. I will attempt to reproduce the issue on a supported version of Pulsar client and Pulsar broker.
+
+
+### Version
+
+Pulsar 4.0.1
+
+### Minimal reproduce step
+
+Exact steps to reproduce aren't yet confirmed.
+
+This problem was faced in a test where there was a large number of consumers that were scaled in a way where consumers were added and removed. The problem was noticed at the end of the test case, where all messages didn't get delivered to consumers and remained in the backlog.
+
+In the topic stats for the subscription, `msgInReplay` showed a positive value and in internal stats for the subscription `subscriptionHavePendingRead` was true. By looking at the code, it seems to be a case that isn't handled for PersistentDispatcherMultipleConsumers/PersistentStickyKeyDispatcherMultipleConsumers. 
+
+### What did you expect to see?
+
+The cursor shouldn't go into completely into "waiting" state when there are messages in the replay queue.
+
+### What did you see instead?
+
+Messages in the replay queue don't get dispatched to consumers.
+
+### Anything else?
+
+Possible workaround is to set `dispatcherDispatchMessagesInSubscriptionThread=false` in `broker.conf` to prevent the race condition causing this issue from happening.
+
+### Are you willing to submit a PR?
+
+- [x] I'm willing to submit a PR!

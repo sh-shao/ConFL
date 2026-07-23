@@ -1,0 +1,52 @@
+Incorrect results when transactional / ORC ACID Hive table accessed in Trino transaction
+### steps to reproduce
+
+```
+bin/ptl env up --environment singlenode --debug --config config-hdp3
+```
+
+```
+docker exec -itu hive ptl-hadoop-master bash -l
+[hive@hadoop-master /]$ beeline -n hive
+0: jdbc:hive2://localhost:10000/default> CREATE TABLE t (a bigint) STORED AS ORC TBLPROPERTIES('transactional'='true');
+```
+
+```
+$ bin/trino-cli --catalog hive --schema default
+trino:default> START TRANSACTION;
+START TRANSACTION                                                                                                         trino:default> INSERT INTO t VALUES 1,2,3,4,5,6,7,8,9;
+INSERT: 9 rows
+
+Query 20220124_111422_00003_z7hm9, FINISHED, 1 node
+http://localhost:8080/ui/query.html?20220124_111422_00003_z7hm9
+Splits: 11 total, 11 done (100.00%)
+CPU Time: 0.5s total,     0 rows/s,     0B/s, 70% active
+Per Node: 0.2 parallelism,     0 rows/s,     0B/s
+Parallelism: 0.2
+Peak Memory: 0B
+2.67 [0 rows, 0B] [0 rows/s, 0B/s]
+
+trino:default> ROLLBACK;
+ROLLBACK
+trino:default> SELECT * FROM t;
+ a
+---
+ 1
+ 2
+ 3
+ 4
+ 5
+ 6
+ 7
+ 8
+ 9
+(9 rows)
+```
+
+### expected
+
+The transaction was rolled back, so the INSERT results should not be visible.
+Also, concurrent readers shouldn't see INSERT effect until transaction is committed.
+
+Or -- actually preferred -- writing to an ORC ACID or an insert-only Hive transactional table is **rejected** in an explicit (not autocommit) Trino transaction.
+

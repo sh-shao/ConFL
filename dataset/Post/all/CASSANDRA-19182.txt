@@ -1,0 +1,4 @@
+IR may leak SSTables with pending repair when coming from streaming
+There is a race condition where SSTables from streaming may race with pending repair cleanup in compaction causing us to cleanup the pending repair state in compaction while the SSTables are being added to it; this leads to IR failing in the future when those files get selected for repair.
+
+This problem was hard to track down as the in-memory state was wiped, so we don’t have any details.  To better aid these types of investigation we should make sure the repair vtables get updated when IR session failures are submitted

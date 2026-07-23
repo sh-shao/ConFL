@@ -1,0 +1,2 @@
+Timers created outside event loop might not fire
+When a timer is created from a non vertx thread, there can be a race with the timer task that executes before the internal timer task is added to the vertx timeout map. When it happens, the timer will not execute since this check is to check whether the task was cancelled by another thread.

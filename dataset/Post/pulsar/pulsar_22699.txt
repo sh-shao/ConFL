@@ -1,0 +1,45 @@
+[Bug] Deadlock in broker service while initializing bkClient
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Read release policy
+
+- [X] I understand that unsupported versions don't get bug fixes. I will attempt to reproduce the issue on a supported version of Pulsar client and Pulsar broker.
+
+
+### Version
+
+2.10.6
+
+### Minimal reproduce step
+
+Not able to reproduce. But its happenning in our running clusters intermittently(mostly observed after rollouts) after upgrading from 2.9.3 to 2.10.6 
+
+### What did you expect to see?
+
+Exception can be thrown with valid reason if any and thread can be released
+
+### What did you see instead?
+
+Threads gets blocked and timeouts in produce/consume. Also, faulty broker stopped serving anything and all the bundles  unloaded to some other broker.
+ 
+Exception at Client side:
+`WARN 8 --- [-client-io-18-4] o.a.p.client.impl.ConnectionHandler      : [persistent://tenant/namespace/topic-partition-34] [tenant/namespace] Error connecting to broker: org.apache.pulsar.client.api.PulsarClientException: Connection already closed
+
+2024-04-22T10:29:31.898+05:30  WARN 8 --- [-client-io-18-4] o.a.p.client.impl.ConnectionHandler      : [persistent://tenant/namespace/topic-partition-34] [tenant/namespace] Could not get connection to broker: org.apache.pulsar.client.api.PulsarClientException: Connection already closed -- Will try again in 57.264 s`
+
+### Anything else?
+
+We have analysed the thread dumps and found a possible deadlock situation.
+[[thread dump](http://jstack.review/?https://gist.github.com/Meet0861/0feb3d93d28b583d30a5d4211917fe1b)]
+Here, we can see thread metadata-store-10-1 is waiting for 2098 and 2098 is held by pulsar-io-4-7. Pulsar-io-4-7 is not releasing this 2098 as its waiting for d898. Now, what is d898 is stuck at?
+D898 is stuck at BookieRackAffinityMapping.setConf() and waiting for completable future.
+
+Can this be related to https://github.com/apache/pulsar/pull/20944 ??
+
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

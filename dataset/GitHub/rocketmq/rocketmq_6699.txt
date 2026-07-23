@@ -1,0 +1,32 @@
+[Enhancement] Make NotificationProcessor use PopLongPollingService
+### Before Creating the Enhancement Request
+
+- [X] I have confirmed that this should be classified as an enhancement rather than a bug/feature.
+
+
+### Summary
+
+Make `NotificationProcessor` use `PopLongPollingService`
+
+### Motivation
+
+1. Use a unified class `PopLongPollingService` to implement long-polling.
+2. The original `wakeup` in  `NotificationProcessor` will notice all the long-polling requests with same key.
+3. The `polling` method in `NotificationProcessor` has a potential data race condition.
+
+https://github.com/apache/rocketmq/blob/d9223ffd787099285cb728d176a05795f6f56df6/broker/src/main/java/org/apache/rocketmq/broker/processor/NotificationProcessor.java#L301-L308
+
+
+### Describe the Solution You'd Like
+
+1. Move long-polling related code from `PopMessageProcessor` into `PopLongPollingService` like `wakeup()`
+2. Use `PollingResult` enum to replace int value
+3. `NotificationProcessor` use `PopLongPollingService` to implement long-polling.
+
+### Describe Alternatives You've Considered
+
+No
+
+### Additional Context
+
+_No response_

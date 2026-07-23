@@ -1,0 +1,44 @@
+Redisson continuously send lock request to redis after redis cluster master-slave switch
+**Evn** : jdk 7, redisson version: 2.11.4，redis version：4.0.1，enable redis cluster with 3 masters and 3 slaves.
+
+After my redis cluster occurs an master-slave switch and then I try to get a lock, but redisson starts getting out of control, it continuously send Lua script command to get lock, while redis cluster return a **MOVED** error because of master-slave switch early, it seems that the redisson didn't know the master-slave switch and continuously send Lua script command to the same server to get lock. **Approximately redisson sends 150000 lock request to redis in 5 seconds with merely more than a dozen application lock request. The network traffic between the redisson server and redis server rise up to 150Mbps**, then it becomes normal after restart the redisson server.
+
+The getting lock code general show below,(I just receive 10+ lock request):
+
+```
+    RLock lock = redissonClient.getLock("lock" + userId);
+    lock.lock();
+```
+
+The network packages general show as below:
+
+lock request to 172.12.12.23:6379: 
+
+```
+$4
+EVAL
+$336
+if (redis.call('exists', KEYS[1]) == 0) then redis.call('hset', KEYS[1], ARGV[2], 1); redis.call('pexpire', KEYS[1], ARGV[1]); return nil; end; if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then redis.call('hincrby', KEYS[1], ARGV[2], 1); redis.call('pexpire', KEYS[1], ARGV[1]); return nil; end; return redis.call('pttl', KEYS[1]);
+$1
+1
+$26
+lockxxxxx(the lock key)
+$5
+30000
+$40
+f81643d6-7408-49fe-ad69-5710b28a4eed:167
+```
+
+redis response from 172.12.12.23:6379:
+```
+MOVED 5264 172.12.12.32:6379
+```
+
+then the redission continuously send lock request to 172.12.12.23:6379.
+
+### Redis version
+4.0.1
+### Redisson version
+2.11.4
+### Redisson configuration
+default configuration

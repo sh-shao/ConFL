@@ -1,0 +1,71 @@
+Multiple ReadLocks are not sharing locks properly after WriteLock releases
+Hello!
+
+﻿I've found something that I believe is a bug in Redisson's [RReadWriteLock](https://static.javadoc.io/org.redisson/redisson/3.4.3/org/redisson/api/RReadWriteLock.html) implementation where multiple ReadLocks seemed to become or at least behaved like WriteLock when it tried to lock on a lockpoint that another WriteLock has already acquired a lock, then released. Because of that, ReadLocks are not sharing the lockpoint like it should and are taking turns in locking the lockpoint. Theoretically, this will have a performance impact on applications that expected Redisson to have quicker locking mechanism based on inclusive locking mechanism but under the hood, it is not inclusive and those applications will spend some time to wait for locks to complete.
+
+I have tested this with Java's [ReentrantReadWriteLock](https://docs.oracle.com/javase/7/docs/api/index.html?java/util/concurrent/locks/ReentrantLock.html) and it has worked exactly what I'd expected it to be.
+
+**Note:** I have only tested this on a single Redis server. I did not test this on clustered Redis servers.
+
+### Expected behavior
+
+1. Writer Thread locks
+2. Reader Thread 1 fails to lock and waits
+3. Reader Thread 2 fails to lock and waits
+4. Reader Thread 3 fails to lock and waits
+5. Writer Thread unlocks
+6. Read Thread 1 locks
+7. Read Thread 2 locks
+8. Read Thread 3 locks
+9. Read Thread 1 unlocks
+10. Read Thread 2 unlocks
+11. Read Thread 3 unlocks
+
+This behavior matches Java's [ReentrantReadWriteLock](https://docs.oracle.com/javase/7/docs/api/index.html?java/util/concurrent/locks/ReentrantLock.html) behavior exactly.
+
+### Actual behavior
+1. Writer Thread locks
+2. Reader Thread 1 fails to lock and waits
+3. Reader Thread 2 fails to lock and waits
+4. Reader Thread 3 fails to lock and waits
+5. Writer Thread unlocks
+6. Read Thread 1 locks
+7. Read Thread 2 fails to lock and waits
+8. Read Thread 3 fails to lock and waits
+9. Read Thread 1 unlocks
+10. Read Thread 2 locks
+11. Read Thread 3 fails to lock and waits
+12. Read Thread 2 unlocks
+13. Read Thread 3 locks
+14. Read Thread 3 unlocks
+
+This behavior does not match Java's [ReentrantReadWriteLock](https://docs.oracle.com/javase/7/docs/api/index.html?java/util/concurrent/locks/ReentrantLock.html) behavior exactly.
+
+### Steps to reproduce or test case
+I have written a test code for you to review, download, and test. 
+
+The link to my code is here:
+https://github.com/orchapod/redisson-lock-test
+
+The test code includes two test suites that runs a control test using Java's [ReentrantReadWriteLock](https://docs.oracle.com/javase/7/docs/api/index.html?java/util/concurrent/locks/ReentrantLock.html) and an experiment test with Redisson's [RReadWriteLock](https://static.javadoc.io/org.redisson/redisson/3.4.3/org/redisson/api/RReadWriteLock.html).
+
+Each test suites has two test cases where one of the test does multiple ReadLocks locks on the lockpoint before WriteLock locks on it, and another one tests multiple ReadLocks locking on the lockpoint after WriteLock has locked on it. The failure on the latter test on Redisson's [RReadWriteLock](https://static.javadoc.io/org.redisson/redisson/3.4.3/org/redisson/api/RReadWriteLock.html) is what has prompted me to open this issue ticket. Java's [ReentrantReadWriteLock](https://docs.oracle.com/javase/7/docs/api/index.html?java/util/concurrent/locks/ReentrantLock.html) passed that test.
+
+Overview:
+* RedissonLockTest
+  * `testReadLockBeforeWriteLock` - PASS
+  * `testReadLockAfterWriteLock` - **FAIL**
+* ReentrantLockTest
+  * `testReadLockBeforeWriteLock` - PASS
+  * `testReadLockAfterWriteLock` - PASS
+
+To run the test, run `mvn test` with Maven to test the code.
+
+### Redis version
+4.0.9
+
+### Redisson version
+3.7.3
+
+### Redisson configuration
+Single server with default configuration created by Redisson's Config class.

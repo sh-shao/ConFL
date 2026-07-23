@@ -1,0 +1,46 @@
+Redisson 3.10.7 & FST 2.57 - Data is not cleared from ThraedLocal while using Serialization of FST library
+<!--
+Please consider to take commercial 24x7 support included in PRO version https://redisson.pro
+-->
+When we are saving some data in redis using FST codec then data is not cleared from ThreadLocal after data saved to the redis. This is causing issue of OutOfMemory as tomcat thread's ThreadLocalMap is filled with huge data which was used while FST serialization.
+
+Detail: 
+- Main code requested for putting some data in Redis.
+- Redisson uses FST serialization to serialize data and then stores into Redis.
+- FSTObjectOutput which was used while serialization has stored data in ThreadLocal object and it has not cleared data from ThreadLocal after it was saved in the Redis.
+
+I can see ThreadLocalMap contains all the data which was used while FST serialization. Please see below snapshot of heap dump:
+![image](https://user-images.githubusercontent.com/19212373/60440139-ca20f980-9c31-11e9-8050-ba564dfb1142.png)
+
+Ideally it should clear the data from ThreadLocal, once the data stored in Redis.
+
+### Sample Code:
+
+      RMap<String, MyData> sampleMyClassMap;
+      Config config = Config.fromJSON(new File("SingleServerConfig.json"));
+      RedissonClient redisson = Redisson.create(config);
+
+      Codec compositeCodec =
+          new CompositeCodec(new StringCodec(), new LZ4Codec(), new SerializationCodec());
+      sampleMyClassMap = redisson.getMap("MyData", compositeCodec);
+
+      MyData myclassObj = new MyData();
+      // Create some huge data and save it in Redis
+      String a = "a";
+      for (int j = 0; j < 26; j++) {
+        a += a;
+      }
+
+      myclassObj.setName(a);
+
+      sampleMyClassMap.put("Object", myclassObj);
+
+      // Check heap dump before this call, we can see ThreadLocalMap will keep the serialized data in memory
+      redisson.shutdown();
+
+
+### Redis version - 4.0.11
+
+### Redisson version - 3.10.7
+
+### Redisson configuration - Single server configuration

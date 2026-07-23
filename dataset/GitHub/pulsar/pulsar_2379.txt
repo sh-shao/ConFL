@@ -1,0 +1,7 @@
+Initializing cluster metadata should handle /managed-ledger path better
+`/managed-ledger` can be created automatically by brokers without initializing metadata. so in helm deployment, all pods are usually started at the same time. hence the race condition can happen between broker starts and initializing cluster metadata.
+
+- broker starts triggering creating `/managed-ledger`
+- cluster-metadata-initializer attempts to initialize cluster metadata and fail since `/managed-ledger` is already there.
+
+it can be handled by adding more checks in `initContainer` before starting brokers. However I think we also need to improve the logic on initializing cluster metadata to better handle such corner cases.

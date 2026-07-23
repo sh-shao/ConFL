@@ -1,0 +1,4 @@
+Deadlock in server transport with multiple ports
+[`ServerImpl.start()`](https://github.com/grpc/grpc-java/blob/v1.26.0/core/src/main/java/io/grpc/internal/ServerImpl.java#L184) calls `NettyServer.start()` while holding `ServerImpl.lock`. [`NettyServer.start()`](https://github.com/grpc/grpc-java/blob/v1.26.0/netty/src/main/java/io/grpc/netty/NettyServer.java#L251) awaits a submitted runnable in eventloop. However, this pending runnable may never be executed because the eventloop might be executing some other task, , like `ServerListenerImpl.transportCreated()`,  that is trying to acquire `ServerImpl.lock` causing a deadlock.
+
+This is a deadlock for multiple-port server transport usecase with the same deadlock mechanism as #6601.

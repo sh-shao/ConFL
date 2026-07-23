@@ -1,0 +1,69 @@
+[metadata] Race condition in ResourceLockImpl#revalidate
+**Describe the bug**
+Current unit test `org.apache.pulsar.metadata.LockManagerTest#updateValueWhenKeyDisappears` have a small chance that will fails with following exception:
+
+> 
+> java.util.concurrent.CompletionException: org.apache.pulsar.metadata.api.MetadataStoreException$LockBusyException: Resource at /my/path/1 is already locked
+> 
+>     at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:331)
+>     at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:346)
+>     at java.base/java.util.concurrent.CompletableFuture$UniRun.tryFire(CompletableFuture.java:777)
+>     at java.base/java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:506)
+>     at java.base/java.util.concurrent.CompletableFuture.completeExceptionally(CompletableFuture.java:2088)
+>     at org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl.lambda$acquireWithNoRevalidation$7(ResourceLockImpl.java:167)
+>     at java.base/java.util.concurrent.CompletableFuture.uniExceptionally(CompletableFuture.java:986)
+>     at java.base/java.util.concurrent.CompletableFuture$UniExceptionally.tryFire(CompletableFuture.java:970)
+>     at java.base/java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:506)
+>     at java.base/java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:2073)
+>     at org.apache.pulsar.metadata.impl.DelayInjectionMetadataStore.lambda$getRandomDelayStage$0(DelayInjectionMetadataStore.java:83)
+>     at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:515)
+>     at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+>     at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304)
+>     at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128)
+>     at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628)
+>     at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+>     at java.base/java.lang.Thread.run(Thread.java:829)
+> Caused by: org.apache.pulsar.metadata.api.MetadataStoreException$LockBusyException: Resource at /my/path/1 is already locked
+>     ... 13 more
+
+
+It fails on the line here:
+https://github.com/apache/pulsar/blob/693a066d73ea4012fb2bb750d7450474f210cccd/pulsar-metadata/src/test/java/org/apache/pulsar/metadata/LockManagerTest.java#L198
+
+After some digging, I found that it's because there is a race condition of method `org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl#revalidate`.
+
+
+Call stack A:
+1.  `store.delete("/my/path/1", Optional.empty()).join();`
+2. Node Delete Event
+2. LockManagerImpl#handleDataNotification
+3. ResourceLockImpl#lockWasInvalidated
+4. **ResourceLockImpl#revalidate**
+
+Call stack B:
+1. lock.updateValue("value-2").join();
+2. org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl#acquire
+3. ResourceLockImpl#acquireWithNoRevalidation fails with LockBusyException
+4. **ResourceLockImpl#revalidate** , See: https://github.com/apache/pulsar/blob/693a066d73ea4012fb2bb750d7450474f210cccd/pulsar-metadata/src/main/java/org/apache/pulsar/metadata/coordination/impl/ResourceLockImpl.java#L130
+
+Once the node is deleted and two `ResourceLockImpl#revalidate` are called at the same time, one of them is going to fail.
+So in the case above `lock.updateValue` is failed.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. It's easier to reproduce this when we add a 5ms delay in `MetadataStore#get` or use DelayInjectionMetadataStore in #13005
+2. Run updateValueWhenKeyDisappears a few times
+3. See error.
+
+**Expected behavior**
+
+lock.updateValue should always success in this case.
+
+**Screenshots**
+NA
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+
+**Additional context**
+NA

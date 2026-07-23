@@ -1,0 +1,3 @@
+HTTP client retry on same host can self deadlock
+The HTTP client retrying the same host on a failure can self deadlock because it will close the pool after it performs the callback. It should close the pool before so when it retries and fail it does not retry indefinitely.
+

@@ -1,0 +1,31 @@
+[Bug] Incorrect usage of ConcurrentSkipListMap#computeIfAbsent
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+master
+
+### Minimal reproduce step
+
+ConcurrentSkipListMap#computeIfAbsent does not guarantee only calling the supplier atomically when the value is not present. The following usage appears to be side effecting code that will likely break due to misuse of this method:
+
+https://github.com/apache/pulsar/blob/82237d3684fe506bcb6426b3b23f413422e6e4fb/managed-ledger/src/main/java/org/apache/bookkeeper/mledger/util/RangeCache.java#L78-L82
+
+### What did you expect to see?
+
+We need to make sure that we only increment those atomic counters once.
+
+### What did you see instead?
+
+There is a chance we'll increment the counters in certain race conditions.
+
+### Anything else?
+
+Relevant context can be found here: https://github.com/datastax/cassandra/pull/789#discussion_r1346445456
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

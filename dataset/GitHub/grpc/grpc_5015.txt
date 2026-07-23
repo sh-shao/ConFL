@@ -1,0 +1,16 @@
+Revisit LoadBalancer API's threading model
+The `LoadBalancer` main interface is not thread-safe, and is guaranteed to be called from the `SynchronizationContext`. This has relieved implementors from worrying about synchronization.
+
+As for the auxiliary interfaces, `SubchannelPicker` is intentionally thread-safe because it on the critical path. `Helper` and `Subchannel` are not on the critical path, we made them thread-safe because they are implemented by GRPC and we thought making them thread-safe would probably provide more convenience to their callers.
+
+However, client-side health checking (#4932) and our (Google-internal) request routing work revealed two use cases where a `LoadBalancer` may wrap or delegate to another, while adding additional logic. `Helper` and `Subchannel` may also be wrapped in the process.
+
+For example, `HealthCheckingLoadBalancerFactory` wraps `Helper.createSubchannel()` to initialize health checking on the created `Subchannel`, and we find it **much easier to implement** if `createSubchannel()` were always called from the SynchronizationContext, which is not the case right now since `createSubchannel()` is thread-safe. In fact, probably all `LoadBalancer`s always call `createSubchannel()` from the SynchronizationContext, otherwise it may race with `handleSubchannelState()` and it's non-trivial to handle, and will cancel out the benefits of the threading guarantee on the main `LoadBalancer` interface.
+
+Because of the apparent issue with `createSubchannel()`, we are going to suggest always calling it from the `SynchronizationContext`, and will log a warning if it's not the case.
+
+We'd like to discuss whether it makes sense to make `Helper` and `Subchannel` non-thread-safe, and require them to be called from `SynchronizationContext`.
+
+My argument for non-thread-safety: we made `Helper` and `Subchannel` thread-safe based on the mindset that they is only one implementation which is from GRPC. In fact, a 3rd-party developer may want to wrap them and add their own logic, and it now becomes their burden to make their added logic thread-safe too.
+
+Possible argument for thread-safety: `Subchannel.requestConnection()` may be called from the critical path. However, since it doesn't guarantee any action for the caller, the caller can easily enqueue it to the SynchronizationContext.

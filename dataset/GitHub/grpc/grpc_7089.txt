@@ -1,0 +1,3 @@
+RetriableStream.Sublistener.onReady() has broken concurrency for hedging
+As mentioned in https://github.com/grpc/grpc-java/issues/6817#issuecomment-637733518, there could be multiple concurrent `Sublistener.onReady()` invocations. They should not all be propagated to the master listener which may cause excessive buffering.
+

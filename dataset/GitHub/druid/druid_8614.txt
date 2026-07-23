@@ -1,0 +1,10 @@
+The same storage location can be picked up over again with RoundRobinStorageLocationSelectorStrategy
+### Affected Version
+
+master
+
+### Description
+
+`RoundRobinStorageLocationSelectorStrategy` was introduced in #8038. In the current implementation of this strategy, the iteration state is shared by different threads. When a thread calls `Iterator.next()` for the iterator returned from `RoundRobinStorageLocationSelectorStrategy.getLocations()`, the next thread will get a next storage location in a round robin fashion. However, with this strategy, the same storage location can be potentially picked up over again for the same thread. For example, suppose we have 2 storage locations and 2 threads. After the Thread `T1` can pick up the storage location `L1`, another thread `T2` can pick up the storage location `L2`. This will let `T1` pick up the same location `L1`. This might be fine in general, but it could be problematic if there is something wrong with `L1`. Since `T1` will can pick up the problematic location `L1` over again, it will never finish segment loading and fail.
+
+FYI @sashidhar.

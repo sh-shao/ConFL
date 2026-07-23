@@ -1,0 +1,9 @@
+HttpClient improvements
+A bunch of improvements aiming at simplifying the code and remove existing potential deadlocks when client is used elsewhere than the event loop
+
+- move the 100 continue handling in the stream management instead of HttpClientRequest implementation
+- request timeout is now fully handled by resetting the request
+- resetting a request will always call the request / response exception handlers
+- remove usage of end sentinel in HTTP 1 streams and instead use the trailers map
+- stream reset now takes an exception as argument instead of a code
+- stream reset exception does not anymore capture the stack trace

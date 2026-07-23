@@ -1,0 +1,43 @@
+redisson keep sending lock request to redis due to redis cluster master-slave failover 
+redis version : 3.2.1
+redisson: 2.11.4
+jdk:1.7
+redis cluster : 3 master, 3 slave
+
+172.1.1.1:16379
+172.1.1.2:16379
+172.1.1.3:16379
+172.1.1.4:16380
+172.1.1.5:16380
+172.1.1.6:16380
+
+i use redisson redLock in my project, i think redLock should be work in any case, below is my code,
+
+```
+RLock lock = redissonClient.getLock(SENDMESSAGE_LOCK+phoneNumber);
+lock.lock();
+```
+but when redis cluster code master-slave failover, redisson failed to acquire lock and keep sending acquire lock request, below is request:
+
+   -> 172.1.1.1:16379
+```
+if (redis.call('exists', KEYS[1]) == 0) then 
+redis.call('hset', KEYS[1], ARGV[2], 1); 
+redis.call('pexpire', KEYS[1], ARGV[1]); 
+return nil; 
+end; 
+if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then 
+redis.call('hincrby', KEYS[1], ARGV[2], 1); 
+redis.call('pexpire', KEYS[1], ARGV[1]); 
+return nil; 
+end; 
+return redis.call('pttl', KEYS[1]);
+```
+
+then redis cluster response as below:
+```
+MOVED 3531 172.1.1.4:16380
+```
+
+then send same request again and again... cluster response again...
+

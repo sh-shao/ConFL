@@ -1,0 +1,2 @@
+Deadlock when deploying several instances of a verticle a starting net server
+This is a regression on 3.8.2 due to #3117

@@ -1,0 +1,39 @@
+Kafka Indexing breaks due to Mismatched DatSourceMetadata types during InternalReset call
+
+### Affected Version
+
+0.14.0, 0.14.2, 0.15.0-incubating
+
+### Description
+
+This is pretty hard to reproduce as it seems to be a race condition during unexpected termination of the middle manager process.
+
+Something happens, I suspect when middle manager shuts down unexpectedly at a specific yet not currently discovered time, that causes the datasource metadata record to have the wrong type for the sequence stream numbers. When middle manger comes back up and is creating the new indexing tasks, it will fail with the following stack trace:
+
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 2019-06-10T14:02:32,642 ERROR [KafkaSupervisor-npav-ts-metrics] org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor - SeekableStreamSupervisor[npav-ts-metrics] failed to handle notice: {class=org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor, exceptionType=class org.apache.druid.java.util.common.IAE, exceptionMessage=Expected instance of org.apache.druid.indexing.seekablestream.SeekableStreamEndSequenceNumbers, got org.apache.druid.indexing.seekablestream.SeekableStreamStartSequenceNumbers, noticeClass=RunNotice}
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | org.apache.druid.java.util.common.IAE: Expected instance of org.apache.druid.indexing.seekablestream.SeekableStreamEndSequenceNumbers, got org.apache.druid.indexing.seekablestream.SeekableStreamStartSequenceNumbers
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.SeekableStreamEndSequenceNumbers.minus(SeekableStreamEndSequenceNumbers.java:159) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.SeekableStreamDataSourceMetadata.minus(SeekableStreamDataSourceMetadata.java:95) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor.resetInternal(SeekableStreamSupervisor.java:1147) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor.getOffsetFromStorageForPartition(SeekableStreamSupervisor.java:2380) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor.generateStartingSequencesForPartitionGroup(SeekableStreamSupervisor.java:2357) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor.createNewTasks(SeekableStreamSupervisor.java:2254) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor.runInternal(SeekableStreamSupervisor.java:1013) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor$RunNotice.handle(SeekableStreamSupervisor.java:265) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor.lambda$tryInit$3(SeekableStreamSupervisor.java:724) ~[druid-indexing-service-0.14.0-incubating.jar:0.14.0-incubating]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511) [?:1.8.0_66-internal]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at java.util.concurrent.FutureTask.run(FutureTask.java:266) [?:1.8.0_66-internal]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142) [?:1.8.0_66-internal]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617) [?:1.8.0_66-internal]
+aod_overlord.1.dcc7ttv9r52t@datahub2-leader-d0xb    | 	at java.lang.Thread.run(Thread.java:745) [?:1.8.0_66-internal]
+
+The issue is that the minus operation requires a SeekableStreamSequenceNumber of the same implementation (start or end) to be successful, but the currentMetadata and resetMetadata values are of different types. 
+
+I tried to correct this issue via conversion of the currentMetadata and resetMetadata both to sequence start numbers via the existing helper method 'asStartMetadata' on the SeekableStreamEndSequenceNumber class, but this caused further conversion issues on subsequent indexing tasks as documented in this PR: https://github.com/apache/incubator-druid/pull/7831
+
+After trying some other solutions, it became clear to me that I do not know enough about the way the start and end numbers were being modified to inject a patch using the built in conversion function. Since we are only using Kafka ingestion (not Kinesis), I re-evaluated the SeekableStreamEndSequenceNumber and SeekableStreamStartSequenceNumber classes and realized that they are pretty much the same thing and that only the "exclusivePartitions' property of the SeekableStreamStartSequenceNumber is used for kinesis streaming. So it seems like both classes are not really required as one class could provide the functionality needed.
+
+I believe this entire issue could be resolved by consolidating those two classes into one class as I am not certain two separate classes are required to manage the partition offset states for the start and end offsets independently.
+
+### Current Workaround
+I have a custom build where I have commented out the SeekableStreamEndSequenceNumber class and replaced all instances of SeekableStreamEndSequenceNumber with SeekableStreamStartSequenceNumber. Anytime the constructor for SeekableStreamStartSequenceNumber is called, I am using Collections.emptySet() for the third parameter for the exclusivePartitionMap as Kafka indexing does not use this. So far this workaround has "corrected" the bad datasource metadata and indexing tasks are all passing successfully. I am currently testing failure scenarios to try and reproduce the original race condition bug to validate this is working.

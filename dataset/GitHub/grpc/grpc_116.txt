@@ -1,0 +1,12 @@
+Buffer Messages until TLS Handshake and HTTP2 Negotiation complete
+When grpc uses Netty as the client transport all RPC calls (aka HTTP2 Streams) block until the TLS Handshake and the HTTP2 negotiation is complete.
+
+This blocking implementation (in grpc) is currently required as Netty's `SslHandler` doesn't buffer messages until the Handshake is complete (`"You must make sure not to write a message while the handshake is in progress unless you are renegotiating."`), and there is nothing to stop the user from starting to make RPC calls immediately.
+
+This behavior comes with two problems:
+1. With RPC calls blocking until the TLS Handshake is complete, every call launched before the TLS Handshake and HTTP2 Negotiation are done will block its thread from which one would expect async behavior though.
+2. In cases when a `DirectExecutor` is being used it might lead to the `EventLoop` blocking forever (deadlock effectively). There is several scenarios how a deadlock could happen. One such scenario is when you are writing a server in Netty and within that server you want to connect to a grpc service to fetch some data. If you now use a `DirectExecutor` and reuse the `EventLoop` of the server with the grpc client, the TLS handshake would block the server's `EventLoop`, which is also the very `EventLoop` responsible for completing the TLS HandShake. That way neither the server nor the client would ever make progress again.
+
+@nmittler , @ejona86 and I talked about this problem earlier today and we agreed to get rid of the blocking behavior by adding an additional `ChannelHandler` to the end of the pipeline (tail) that will buffer any data until TLS & HTTP2 are working. After that it will send the buffered messages through the pipeline and remove itself from the pipeline.
+
+@nmittler @ejona86 @louiscryan 

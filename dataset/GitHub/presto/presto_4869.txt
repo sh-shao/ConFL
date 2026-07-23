@@ -1,0 +1,37 @@
+Potential deadlock when using phased scheduler with broadcast joins
+``` sql
+SELECT * FROM orders CROSS JOIN (VALUES 1);
+```
+
+```
+ Fragment 0 [SINGLE]                                                                                                                                                                                                                
+     Output layout: [orderkey, custkey, orderstatus, totalprice, orderdate, orderpriority, clerk, shippriority, comment, field]                                                                                                     
+     Output partitioning: SINGLE []                                                                                                                                                                                                 
+     - Output[orderkey, custkey, orderstatus, totalprice, orderdate, orderpriority, clerk, shippriority, comment, _col9] => [orderkey:bigint, custkey:bigint, orderstatus:varchar, totalprice:double, orderdate:date, orderpriority:
+             _col9 := field                                                                                                                                                                                                         
+         - RemoteSource[1] => [orderkey:bigint, custkey:bigint, orderstatus:varchar, totalprice:double, orderdate:date, orderpriority:varchar, clerk:varchar, shippriority:bigint, comment:varchar, field:bigint]                   
+
+ Fragment 1 [SOURCE]                                                                                                                                                                                                                
+     Output layout: [orderkey, custkey, orderstatus, totalprice, orderdate, orderpriority, clerk, shippriority, comment, field]                                                                                                     
+     Output partitioning: SINGLE []                                                                                                                                                                                                 
+     - InnerJoin[] => [orderkey:bigint, custkey:bigint, orderstatus:varchar, totalprice:double, orderdate:date, orderpriority:varchar, clerk:varchar, shippriority:bigint, comment:varchar, field:bigint]                           
+         - TableScan[tpch:tpch:orders:sf1.0, originalConstraint = true] => [orderkey:bigint, custkey:bigint, orderstatus:varchar, totalprice:double, orderdate:date, orderpriority:varchar, clerk:varchar, shippriority:bigint, comm
+                 orderkey := tpch:orderkey                                                                                                                                                                                          
+                 custkey := tpch:custkey                                                                                                                                                                                            
+                 orderstatus := tpch:orderstatus                                                                                                                                                                                    
+                 totalprice := tpch:totalprice                                                                                                                                                                                      
+                 orderdate := tpch:orderdate                                                                                                                                                                                        
+                 orderpriority := tpch:orderpriority                                                                                                                                                                                
+                 clerk := tpch:clerk                                                                                                                                                                                                
+                 shippriority := tpch:shippriority                                                                                                                                                                                  
+                 comment := tpch:comment                                                                                                                                                                                            
+         - RemoteSource[2] => [field:bigint]                                                                                                                                                                                        
+
+ Fragment 2 [SINGLE]                                                                                                                                                                                                                
+     Output layout: [field]                                                                                                                                                                                                         
+     Output partitioning: BROADCAST []                                                                                                                                                                                              
+     - Values => [field:bigint]                                                                                                                                                                                                     
+             (1)   
+```
+
+The scheduling dependency graph is missing an edge (2->1), which can cause the join stage to be scheduled independently (and before) the build stage.

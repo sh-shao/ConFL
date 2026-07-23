@@ -1,0 +1,23 @@
+Potential deadlock due to calling callbacks while holding a lock
+`InProcessClientStream` and `InProcessServerStream` are synchronized on their own. `InProcessClientStream.serverStreamListener` is called under `synchronized (InProcessClientStream.this)`, and vice versa.
+
+If the application tries to call methods on `ClientCall` or `ServerCall` from within the callbacks (assuming that it has already taken care of the thread-safety of the method calls on "Call" objects), a deadlock is possible when direct executor is used. For example:
+- Thread1
+  1. `InProcessClientStream.serverRequested` (locks `InProcessClientStream.this`)
+  1. `InProcessClientStream.serverStreamListener.messageRead()`
+  1. Eventually reaches application callback, which calls `ServerCall.close()`
+  1. `InProcessServerStream.close()` (locks `InProcessServerStream.this`)
+
+- Thread2
+  1. `InProcessServerStream.clientRequested` (locks `InProcessServerStream.this`)
+  1. `InProcessServerStream.clientStreamListener.messageRead()`
+  1. Eventually reaches application callback, which calls `ClientCall.close()`
+  1. `InProcessClientStream.close()` (locks `InProcessClientStream.this`)
+
+As locks are acquired in reverse orders from two threads, a deadlock is possible.
+
+The fundamental issue is that we should not call into application code while holding a lock, because we don't know what application code can do thus we can't control the order of subsequent locking.
+
+OkHttp has the same issue, because `OkHttpClientStream.transportDataReceived()`, which will call into application code, is called under lock.
+
+We could use `ChannelExecutor` (maybe renamed) to prevent calling into callbacks while holding a lock.

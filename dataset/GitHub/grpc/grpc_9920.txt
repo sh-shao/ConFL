@@ -1,0 +1,42 @@
+XdsClientImplTestBase.sendToNonexistentHost() is failing TSAN
+sponge/704594a0-641b-4b13-9f9f-5197111e3ebd
+```
+Details
+==================
+WARNING: ThreadSanitizer: data race (pid=3055)
+  Read of size 8 at 0x0000cf08ba60 by thread T25:
+    #0 io.grpc.internal.FakeClock$2.read()J FakeClock.java:61 
+    #1 com.google.common.base.Stopwatch.elapsedNanos()J Stopwatch.java:222 
+    #2 com.google.common.base.Stopwatch.elapsed(Ljava/util/concurrent/TimeUnit;)J Stopwatch.java:239 
+    #3 io.grpc.xds.AbstractXdsClient$AbstractAdsStream.handleRpcStreamClosed(Lio/grpc/Status;)V AbstractXdsClient.java:351 
+    #4 io.grpc.xds.AbstractXdsClient$AbstractAdsStream.handleRpcError(Ljava/lang/Throwable;)V AbstractXdsClient.java:321 
+    #5 io.grpc.xds.AbstractXdsClient$AdsStreamV3$1$2.run()V AbstractXdsClient.java:422 
+    #6 io.grpc.SynchronizationContext.drain()V SynchronizationContext.java:95 
+    #7 io.grpc.SynchronizationContext.execute(Ljava/lang/Runnable;)V SynchronizationContext.java:127 
+    #8 io.grpc.xds.AbstractXdsClient$AdsStreamV3$1.onError(Ljava/lang/Throwable;)V AbstractXdsClient.java:419 
+    #9 io.grpc.stub.ClientCalls$StreamObserverToCallListenerAdapter.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V ClientCalls.java:487 
+    #10 io.grpc.PartialForwardingClientCallListener.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V PartialForwardingClientCallListener.java:39 
+    #11 io.grpc.ForwardingClientCallListener.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V ForwardingClientCallListener.java:23 
+    #12 io.grpc.ForwardingClientCallListener$SimpleForwardingClientCallListener.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V ForwardingClientCallListener.java:40 
+    #13 io.grpc.census.CensusStatsModule$StatsClientInterceptor$1$1.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V CensusStatsModule.java:795 
+    #14 io.grpc.PartialForwardingClientCallListener.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V PartialForwardingClientCallListener.java:39 
+    #15 io.grpc.ForwardingClientCallListener.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V ForwardingClientCallListener.java:23 
+    #16 io.grpc.ForwardingClientCallListener$SimpleForwardingClientCallListener.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V ForwardingClientCallListener.java:40 
+    #17 io.grpc.census.CensusTracingModule$TracingClientInterceptor$1$1.onClose(Lio/grpc/Status;Lio/grpc/Metadata;)V CensusTracingModule.java:443 
+    #18 io.grpc.internal.DelayedClientCall$DelayedListener$3.run()V DelayedClientCall.java:489 
+    #19 io.grpc.internal.DelayedClientCall$DelayedListener.drainPendingCallbacks()V DelayedClientCall.java:528 
+    #20 io.grpc.internal.DelayedClientCall$1DrainListenerRunnable.runInContext()V DelayedClientCall.java:317 
+    #21 io.grpc.internal.ContextRunnable.run()V ContextRunnable.java:37 
+    #22 java.util.concurrent.ThreadPoolExecutor.runWorker(Ljava/util/concurrent/ThreadPoolExecutor$Worker;)V ThreadPoolExecutor.java:1130 
+    #23 java.util.concurrent.ThreadPoolExecutor$Worker.run()V ThreadPoolExecutor.java:630 
+    #24 java.lang.Thread.run()V Thread.java:830 
+    #25 (Generated Stub) <null> 
+
+  Previous write of size 8 at 0x0000cf08ba60 by thread T5 (mutexes: write M0, write M1, write M2):
+    #0 io.grpc.internal.FakeClock.forwardTime(JLjava/util/concurrent/TimeUnit;)I FakeClock.java:367 
+    #1 io.grpc.xds.XdsClientImplTestBase.sendToNonexistentHost()V XdsClientImplTestBase.java:3624 
+    #2 (Generated Stub) <null> 
+    ...
+```
+
+FakeClock is not thread-safe, and I suspect we don't want to make it thread-safe. I think XdsClientImplV3Test was being run when this failed, but TSAN kills the process (not fails the test), so I don't think we know which test case.

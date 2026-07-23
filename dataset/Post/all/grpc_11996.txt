@@ -1,0 +1,10 @@
+Make least request available by default (remove experimental environment variable)
+### Is your feature request related to a problem?
+
+The least request load balancer has been implemented and released behind an environment variable since July 2022 (grpc-java 1.48.0). To my knowledge it has been used in production by spotify for about as long. The last significant change is in https://github.com/grpc/grpc-java/releases/tag/v1.63.0 to fix a race introduced a few versions before.
+
+### Describe the solution you'd like
+
+Remove the `GRPC_EXPERIMENTAL_ENABLE_LEAST_REQUEST` environment variable, so that least request is always available.
+
+Same issue in Go: https://github.com/grpc/grpc-go/issues/8228

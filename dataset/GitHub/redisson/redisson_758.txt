@@ -1,0 +1,31 @@
+RReadWriteLock is not reentrant
+I was expecting the RReadWriteLock to be reentrant, as the [wiki page](https://github.com/redisson/redisson/wiki/8.-distributed-locks-and-synchronizers#85-readwritelock) describes it as (emphasis mine):
+> Redisson distributed **reentrant** ReadWriteLock object for Java
+
+However, in my simple test:
+```
+        Config config = new Config();
+        config.useSingleServer().setAddress(redisAddress);
+        this.client = Redisson.create(config);
+        
+        RReadWriteLock readWriteLock = this.client.getReadWriteLock("TEST");
+        LOGGER.warn("### Acquiring write lock...");
+        readWriteLock.writeLock().lock();
+        LOGGER.warn("### Write lock acquired, acquiring read lock...");
+        try {
+            boolean success = readWriteLock.readLock().tryLock(10, TimeUnit.SECONDS);
+            LOGGER.warn("### Lock success: " + success);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+```
+I see:
+```
+app_1    | 16:24:28.777 [main] WARN  com.craigotis.myapp.core.lock.RedisLockService - ### Acquiring write lock...
+app_1    | 16:24:28.856 [main] WARN  com.craigotis.myapp.core.lock.RedisLockService - ### Write lock acquired, acquiring read lock...
+app_1    | 16:24:38.862 [main] WARN  com.craigotis.myapp.core.lock.RedisLockService - ### Lock success: false
+```
+The "reentrancy" clause of the [ReentrantReadWriteLock Javadoc](https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/locks/ReentrantReadWriteLock.html) states:
+> Additionally, a writer can acquire the read lock, but not vice-versa.
+
+My use of redisson relies on these locks being reentrant (at least within the same Thread), however this does not seem to be the case - is this a bug, or a configuration issue on my end?

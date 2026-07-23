@@ -1,0 +1,37 @@
+Flaky-tests: PulsarClientImpl.close hangs forever. 
+PulsarClientImpl.close sometimes hangs forever. Example from ClientDeduplicationFailureTest.shutdown .
+
+[example failure](https://github.com/apache/pulsar/runs/4947236380?check_suite_focus=true#step:10:50)
+
+```
+"main" #1 prio=5 os_prio=0 cpu=287708.03ms elapsed=6747.96s tid=0x00007f46e0028000 nid=0xc9a waiting on condition  [0x00007f46e549e000]
+   java.lang.Thread.State: WAITING (parking)
+        at jdk.internal.misc.Unsafe.park(java.base@11.0.13/Native Method)
+        - parking to wait for  <0x00000000dde38ad0> (a java.util.concurrent.CompletableFuture$Signaller)
+        at java.util.concurrent.locks.LockSupport.park(java.base@11.0.13/LockSupport.java:194)
+        at java.util.concurrent.CompletableFuture$Signaller.block(java.base@11.0.13/CompletableFuture.java:1796)
+        at java.util.concurrent.ForkJoinPool.managedBlock(java.base@11.0.13/ForkJoinPool.java:3128)
+        at java.util.concurrent.CompletableFuture.waitingGet(java.base@11.0.13/CompletableFuture.java:1823)
+        at java.util.concurrent.CompletableFuture.get(java.base@11.0.13/CompletableFuture.java:1998)
+        at org.apache.pulsar.client.impl.PulsarClientImpl.close(PulsarClientImpl.java:685)
+        at org.apache.pulsar.client.api.ClientDeduplicationFailureTest.shutdown(ClientDeduplicationFailureTest.java:131)
+```
+
+[pulsar-client-shutdown-threadawaiting notification](https://jstack.review/?https://gist.githubusercontent.com/lhotari/14b5ec998de6933b3b7733fba6acbd90/raw/a3f8270f8a7f1d44c66425ab14b682fe9e6056b5/threadump2022-01-26_01.txt#tda_1_tg_8)
+```
+ pulsar-client-shutdown-threadawaiting notification
+at java.lang.Object.wait(java.base@11.0.13/Native Method)
+at java.lang.Object.wait(java.base@11.0.13/Object.java:328)
+at io.netty.util.concurrent.DefaultPromise.await(DefaultPromise.java:253)
+at io.netty.util.concurrent.DefaultPromise.get(DefaultPromise.java:337)
+at org.apache.pulsar.client.impl.PulsarClientImpl.shutdownEventLoopGroup(PulsarClientImpl.java:811)
+at org.apache.pulsar.client.impl.PulsarClientImpl.shutdown(PulsarClientImpl.java:757)
+at org.apache.pulsar.client.impl.PulsarClientImpl.lambda$closeAsync$20(PulsarClientImpl.java:719)
+at org.apache.pulsar.client.impl.PulsarClientImpl$$Lambda$943/0x00000001009c3040.run(Unknown Source)
+at java.lang.Thread.run(java.base@11.0.13/Thread.java:829)
+```
+
+[There's a possible deadlock](https://jstack.review/?https://gist.githubusercontent.com/lhotari/14b5ec998de6933b3b7733fba6acbd90/raw/a3f8270f8a7f1d44c66425ab14b682fe9e6056b5/threadump2022-01-26_01.txt#tda_1_sync_0x00000000f1656bc0).
+
+
+

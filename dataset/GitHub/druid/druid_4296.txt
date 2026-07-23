@@ -1,0 +1,202 @@
+HLL BufferUnderflowException querying realtime indexing tasks
+I already posted in the druid-user google group about this: [https://groups.google.com/forum/#!topic/druid-user/X71sEX1Ia_8](https://groups.google.com/forum/#!topic/druid-user/X71sEX1Ia_8) but I've decided to also post here since I think it may be an actual issue.
+
+I believe I'm seeing an issue related to https://github.com/druid-io/druid/issues/3560, even though I'm running the 0.9.2 final release downloaded from http://static.druid.io/artifacts/releases/druid-0.9.2-bin.tar.gz, which should contain the fix (https://github.com/druid-io/druid/pull/3578).
+
+A little context:  I'm running indexing realtime tasks on middleManagers that have events pushed to them from applications using tranquility.  When I run timeseries queries for intervals that are being indexed on an indexing node, although the queries may initially return data, after a time, if I repeatedly run the queries I'll eventually begin receiving BufferUnderflowException errors from peon nodes. Here is the relevant query and stack trace pulled from the peon task logs
+
+**Query**
+```
+{
+  "queryType": "timeseries",
+  "dataSource": "memcached_v1",
+  "intervals": "2017-05-18T17:20Z/2017-05-18T18:20Z",
+  "granularity": "all",
+  "context": {
+    "timeout": 120000
+  },
+  "aggregations": [
+    {
+      "name": "count",
+      "type": "doubleSum",
+      "fieldName": "count"
+    },
+    {
+      "name": "requests",
+      "type": "hyperUnique",
+      "fieldName": "requests_hll"
+    },
+    {
+      "name": "unique_keys",
+      "type": "hyperUnique",
+      "fieldName": "unique_keys_hll"
+    },
+    {
+      "name": "!T_0",
+      "type": "doubleSum",
+      "fieldName": "duration"
+    }
+  ],
+  "postAggregations": [
+    {
+      "type": "arithmetic",
+      "fn": "/",
+      "fields": [
+        {
+          "type": "fieldAccess",
+          "fieldName": "count"
+        },
+        {
+          "type": "hyperUniqueCardinality",
+          "fieldName": "requests"
+        }
+      ],
+      "name": "avg_count_request"
+    },
+    {
+      "type": "arithmetic",
+      "fn": "/",
+      "fields": [
+        {
+          "type": "fieldAccess",
+          "fieldName": "!T_0"
+        },
+        {
+          "type": "constant",
+          "value": 1000000
+        }
+      ],
+      "name": "duration"
+    }
+  ]
+}
+```
+
+**Stacktrace**
+```
+2017-05-18T18:21:43,439 ERROR [processing-1] io.druid.query.ChainedExecutionQueryRunner - Exception with one of the sequences!
+java.nio.BufferUnderflowException
+	at java.nio.Buffer.nextGetIndex(Buffer.java:506) ~[?:1.8.0_74]
+	at java.nio.DirectByteBuffer.getShort(DirectByteBuffer.java:590) ~[?:1.8.0_74]
+	at io.druid.query.aggregation.hyperloglog.HyperLogLogCollector.fold(HyperLogLogCollector.java:398) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.aggregation.hyperloglog.HyperUniquesAggregator.aggregate(HyperUniquesAggregator.java:48) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.timeseries.TimeseriesQueryEngine$1.apply(TimeseriesQueryEngine.java:73) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.timeseries.TimeseriesQueryEngine$1.apply(TimeseriesQueryEngine.java:57) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.QueryRunnerHelper$1.apply(QueryRunnerHelper.java:80) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.QueryRunnerHelper$1.apply(QueryRunnerHelper.java:75) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.MappingAccumulator.accumulate(MappingAccumulator.java:39) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.FilteringAccumulator.accumulate(FilteringAccumulator.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappingAccumulator.accumulate(MappingAccumulator.java:39) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.BaseSequence.accumulate(BaseSequence.java:67) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappedSequence.accumulate(MappedSequence.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.ResourceClosingSequence.accumulate(ResourceClosingSequence.java:38) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.FilteredSequence.accumulate(FilteredSequence.java:42) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappedSequence.accumulate(MappedSequence.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.FilteredSequence.accumulate(FilteredSequence.java:42) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.ResourceClosingSequence.accumulate(ResourceClosingSequence.java:38) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.Sequences.toList(Sequences.java:113) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119) ~[druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266) ~[?:1.8.0_74]
+	at com.google.common.util.concurrent.MoreExecutors$SameThreadExecutorService.execute(MoreExecutors.java:297) ~[guava-16.0.1.jar:?]
+	at java.util.concurrent.AbstractExecutorService.submit(AbstractExecutorService.java:134) ~[?:1.8.0_74]
+	at com.google.common.util.concurrent.AbstractListeningExecutorService.submit(AbstractListeningExecutorService.java:58) ~[guava-16.0.1.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1.apply(ChainedExecutionQueryRunner.java:117) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1.apply(ChainedExecutionQueryRunner.java:109) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.google.common.collect.Iterators$8.transform(Iterators.java:794) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.TransformedIterator.next(TransformedIterator.java:48) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.Iterators.addAll(Iterators.java:357) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.Lists.newArrayList(Lists.java:147) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.Lists.newArrayList(Lists.java:129) ~[guava-16.0.1.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1.make(ChainedExecutionQueryRunner.java:105) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.BaseSequence.accumulate(BaseSequence.java:64) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:104) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:104) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.CPUTimeMetricQueryRunner$1.accumulate(CPUTimeMetricQueryRunner.java:81) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.Sequences$1.accumulate(Sequences.java:90) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2$1.call(SpecificSegmentQueryRunner.java:87) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner.doNamed(SpecificSegmentQueryRunner.java:171) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner.access$400(SpecificSegmentQueryRunner.java:41) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2.doItNamed(SpecificSegmentQueryRunner.java:162) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2.accumulate(SpecificSegmentQueryRunner.java:80) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.Sequences.toList(Sequences.java:113) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119) [druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266) [?:1.8.0_74]
+	at io.druid.query.PrioritizedListenableFutureTask.run(PrioritizedExecutorService.java:271) [druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142) [?:1.8.0_74]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617) [?:1.8.0_74]
+	at java.lang.Thread.run(Thread.java:745) [?:1.8.0_74]
+2017-05-18T18:21:43,441 WARN [qtp1259065345-100[timeseries_memcached_v1_858753f9-49f0-4fa6-9916-f60f48a42ad9]] io.druid.server.QueryResource - Exception occurred on request [TimeseriesQuery{dataSource='memcached_v1', querySegmentSpec=MultipleSpecificSegmentSpec{descriptors=[SegmentDescriptor{interval=2017-05-18T18:15:00.000Z/2017-05-18T18:20:00.000Z, version='2017-05-18T18:15:04.604Z', partitionNumber=15}]}, descending=false, dimFilter=null, granularity='AllGranularity', aggregatorSpecs=[DoubleSumAggregatorFactory{fieldName='count', name='count'}, HyperUniquesAggregatorFactory{name='requests', fieldName='requests_hll'}, HyperUniquesAggregatorFactory{name='unique_keys', fieldName='unique_keys_hll'}, DoubleSumAggregatorFactory{fieldName='duration', name='!T_0'}], postAggregatorSpecs=[ArithmeticPostAggregator{name='avg_count_request', fnName='/', fields=[FieldAccessPostAggregator{name='null', fieldName='count'}, io.druid.query.aggregation.hyperloglog.HyperUniqueFinalizingPostAggregator@7d250277], op=DIV}, ArithmeticPostAggregator{name='duration', fnName='/', fields=[FieldAccessPostAggregator{name='null', fieldName='!T_0'}, ConstantPostAggregator{name='null', constantValue=1000000}], op=DIV}], context={finalize=false, queryId=858753f9-49f0-4fa6-9916-f60f48a42ad9, timeout=120000}}]
+java.nio.BufferUnderflowException
+	at java.nio.Buffer.nextGetIndex(Buffer.java:506) ~[?:1.8.0_74]
+	at java.nio.DirectByteBuffer.getShort(DirectByteBuffer.java:590) ~[?:1.8.0_74]
+	at io.druid.query.aggregation.hyperloglog.HyperLogLogCollector.fold(HyperLogLogCollector.java:398) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.aggregation.hyperloglog.HyperUniquesAggregator.aggregate(HyperUniquesAggregator.java:48) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.timeseries.TimeseriesQueryEngine$1.apply(TimeseriesQueryEngine.java:73) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.timeseries.TimeseriesQueryEngine$1.apply(TimeseriesQueryEngine.java:57) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.QueryRunnerHelper$1.apply(QueryRunnerHelper.java:80) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.QueryRunnerHelper$1.apply(QueryRunnerHelper.java:75) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.MappingAccumulator.accumulate(MappingAccumulator.java:39) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.FilteringAccumulator.accumulate(FilteringAccumulator.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappingAccumulator.accumulate(MappingAccumulator.java:39) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.BaseSequence.accumulate(BaseSequence.java:67) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappedSequence.accumulate(MappedSequence.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.ResourceClosingSequence.accumulate(ResourceClosingSequence.java:38) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.FilteredSequence.accumulate(FilteredSequence.java:42) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappedSequence.accumulate(MappedSequence.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.FilteredSequence.accumulate(FilteredSequence.java:42) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.ResourceClosingSequence.accumulate(ResourceClosingSequence.java:38) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.Sequences.toList(Sequences.java:113) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119) ~[druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266) ~[?:1.8.0_74]
+	at com.google.common.util.concurrent.MoreExecutors$SameThreadExecutorService.execute(MoreExecutors.java:297) ~[guava-16.0.1.jar:?]
+	at java.util.concurrent.AbstractExecutorService.submit(AbstractExecutorService.java:134) ~[?:1.8.0_74]
+	at com.google.common.util.concurrent.AbstractListeningExecutorService.submit(AbstractListeningExecutorService.java:58) ~[guava-16.0.1.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1.apply(ChainedExecutionQueryRunner.java:117) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1.apply(ChainedExecutionQueryRunner.java:109) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.google.common.collect.Iterators$8.transform(Iterators.java:794) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.TransformedIterator.next(TransformedIterator.java:48) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.Iterators.addAll(Iterators.java:357) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.Lists.newArrayList(Lists.java:147) ~[guava-16.0.1.jar:?]
+	at com.google.common.collect.Lists.newArrayList(Lists.java:129) ~[guava-16.0.1.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1.make(ChainedExecutionQueryRunner.java:105) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.BaseSequence.accumulate(BaseSequence.java:64) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:104) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:104) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.CPUTimeMetricQueryRunner$1.accumulate(CPUTimeMetricQueryRunner.java:81) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.Sequences$1.accumulate(Sequences.java:90) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2$1.call(SpecificSegmentQueryRunner.java:87) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner.doNamed(SpecificSegmentQueryRunner.java:171) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner.access$400(SpecificSegmentQueryRunner.java:41) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2.doItNamed(SpecificSegmentQueryRunner.java:162) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2.accumulate(SpecificSegmentQueryRunner.java:80) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.Sequences.toList(Sequences.java:113) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119) ~[druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266) ~[?:1.8.0_74]
+	at io.druid.query.PrioritizedListenableFutureTask.run(PrioritizedExecutorService.java:271) ~[druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142) ~[?:1.8.0_74]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617) ~[?:1.8.0_74]
+	at java.lang.Thread.run(Thread.java:745) [?:1.8.0_74]
+```
+
+My middleManger configuration is here:
+```
+druid.worker.capacity=5
+druid.indexer.task.baseTaskDir=/mnt/druid/0/task/
+druid.indexer.task.restoreTasksOnRestart=true
+druid.indexer.fork.property.druid.processing.numThreads=2
+druid.indexer.fork.property.druid.processing.buffer.sizeBytes=536870912
+druid.segmentCache.locations=[{"path":"/mnt/druid/0/segment_cache","maxSize":0}]
+druid.indexer.runner.javaOpts=-server -Xmx3221225472 -XX:+UseG1GC -XX:MaxGCPauseMillis=100
+```
+
+A fix I've found is that if I set
+`druid.indexer.fork.property.druid.processing.numThreads=1`
+
+Then I no longer have any issues, which leads to me to think I am running into the race condition described in the linked issue which ends up corrupting the HLL segment.
+Setting the processing threads to 1 is not ideal though since I would like the efficiency of having an indexing thread and a query thread per task if possible.
+
+I also tried upgrading the cluster to 0.10.0 and still ran into this issue as well.

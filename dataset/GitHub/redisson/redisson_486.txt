@@ -1,0 +1,11 @@
+Rlock performance issue
+Hi
+
+I am using reddison Rlock with a cluster setup , and sometimes I see latency( up to 1000ms)  when trying to acquire the lock or unlock.
+I saw this issue opened by zhxjouc  (https://github.com/mrniko/redisson/issues/455) with a similar problem  and I am working with 2.2.13 but I am still getting latency when a thread is trying  lock a key.
+My code is running with Java thread pool for accessing redis, I notice that if I work with pool of size 1-2
+almost no latency when getting the lock, but working with 30-50 threads cause the lock delay.
+It could be thread overhead issue but I think that 1000ms is too long for that.
+Any help on how can I get better performance when locking an unlocking?.
+
+Thanks 

@@ -1,0 +1,22 @@
+Optimize the lock in AuthenticationAthenz
+**Describe the bug**
+The use of the lock in AuthenticationAthenz will reduce the efficiency of AuthenticationAthenz. Hope it can be optimized.
+
+> Error: Medium: Inconsistent synchronization of org.apache.pulsar.client.impl.auth.AuthenticationAthenz.roleToken; locked 57% of time [org.apache.pulsar.client.impl.auth.AuthenticationAthenz, org.apache.pulsar.client.impl.auth.AuthenticationAthenz, org.apache.pulsar.client.impl.auth.AuthenticationAthenz, org.apache.pulsar.client.impl.auth.AuthenticationAthenz, org.apache.pulsar.client.impl.auth.AuthenticationAthenz, org.apache.pulsar.client.impl.auth.AuthenticationAthenz, org.apache.pulsar.client.impl.auth.AuthenticationAthenz] Unsynchronized access at AuthenticationAthenz.java:[line 51]Unsynchronized access at AuthenticationAthenz.java:[line 51]Unsynchronized access at AuthenticationAthenz.java:[line 51]Synchronized access at AuthenticationAthenz.java:[line 88]Synchronized access at AuthenticationAthenz.java:[line 98]Synchronized access at AuthenticationAthenz.java:[line 100]Synchronized access at AuthenticationAthenz.java:[line 107] IS2_INCONSISTENT_SYNC
+
+
+**To Reproduce**
+
+For more information, please see #8980 CI logs
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+
+**Additional context**
+Add any other context about the problem here.

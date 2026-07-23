@@ -1,0 +1,93 @@
+[Bug] Deadlock occurs when using BookieRackAffinityMapping with rackaware policy
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+OS: Linux
+Pulsar: 2.10.4
+
+### Minimal reproduce step
+
+There are race conditions here and executing the following two operations in parallel may trigger the deadlock:
+* using set-bookie-rack to update rack config
+* new bookie added
+
+### What did you expect to see?
+
+no deadlock
+
+### What did you see instead?
+
+Deadlock occurs.
+
+Info:
+```
+Found one Java-level deadlock:
+=============================
+"main-EventThread":
+  waiting for ownable synchronizer 0x0000000301550fc8, (a java.util.concurrent.locks.ReentrantReadWriteLock$NonfairSync),
+  which is held by "pulsar-registration-client-93-1"
+"pulsar-registration-client-93-1":
+  waiting to lock monitor 0x00007f8110008380 (object 0x00000003015511a0, a org.apache.pulsar.bookie.rackawareness.BookieRackAffinityMapping),
+  which is held by "main-EventThread"
+
+Java stack information for the threads listed above:
+===================================================
+"main-EventThread":
+        at jdk.internal.misc.Unsafe.park(java.base@11.0.14-ga/Native Method)
+        - parking to wait for  <0x0000000301550fc8> (a java.util.concurrent.locks.ReentrantReadWriteLock$NonfairSync)
+        at java.util.concurrent.locks.LockSupport.park(java.base@11.0.14-ga/LockSupport.java:194)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(java.base@11.0.14-ga/AbstractQueuedSynchronizer.java:885)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(java.base@11.0.14-ga/AbstractQueuedSynchronizer.java:917)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@11.0.14-ga/AbstractQueuedSynchronizer.java:1240)
+        at java.util.concurrent.locks.ReentrantReadWriteLock$WriteLock.lock(java.base@11.0.14-ga/ReentrantReadWriteLock.java:959)
+        at org.apache.bookkeeper.client.RegionAwareEnsemblePlacementPolicy.onBookieRackChange(RegionAwareEnsemblePlacementPolicy.java:174)
+        at org.apache.pulsar.bookie.rackawareness.BookieRackAffinityMapping.lambda$handleUpdates$3(BookieRackAffinityMapping.java:265)
+        - locked <0x00000003015511a0> (a org.apache.pulsar.bookie.rackawareness.BookieRackAffinityMapping)
+        at org.apache.pulsar.bookie.rackawareness.BookieRackAffinityMapping$$Lambda$1803/0x0000000800abb440.accept(Unknown Source)
+        at java.util.concurrent.CompletableFuture$UniAccept.tryFire(java.base@11.0.14-ga/CompletableFuture.java:714)
+        at java.util.concurrent.CompletableFuture.postComplete(java.base@11.0.14-ga/CompletableFuture.java:506)
+        at java.util.concurrent.CompletableFuture.complete(java.base@11.0.14-ga/CompletableFuture.java:2073)
+        at org.apache.pulsar.metadata.impl.ZKMetadataStore.handleGetResult(ZKMetadataStore.java:244)
+        at org.apache.pulsar.metadata.impl.ZKMetadataStore.lambda$batchOperation$7(ZKMetadataStore.java:188)
+        at org.apache.pulsar.metadata.impl.ZKMetadataStore$$Lambda$165/0x0000000800347c40.processResult(Unknown Source)
+        at org.apache.pulsar.metadata.impl.PulsarZooKeeperClient$3$1.processResult(PulsarZooKeeperClient.java:490)
+        at org.apache.zookeeper.ClientCnxn$EventThread.processEvent(ClientCnxn.java:722)
+        at org.apache.zookeeper.ClientCnxn$EventThread.run(ClientCnxn.java:563)
+"pulsar-registration-client-93-1":
+        at org.apache.pulsar.bookie.rackawareness.BookieRackAffinityMapping.resolve(BookieRackAffinityMapping.java:202)
+        - waiting to lock <0x00000003015511a0> (a org.apache.pulsar.bookie.rackawareness.BookieRackAffinityMapping)
+        at org.apache.bookkeeper.client.TopologyAwareEnsemblePlacementPolicy$DNSResolverDecorator.resolve(TopologyAwareEnsemblePlacementPolicy.java:563)
+        at org.apache.bookkeeper.net.NetUtils.resolveNetworkLocation(NetUtils.java:88)
+        at org.apache.bookkeeper.client.TopologyAwareEnsemblePlacementPolicy.resolveNetworkLocation(TopologyAwareEnsemblePlacementPolicy.java:804)
+        at org.apache.bookkeeper.client.TopologyAwareEnsemblePlacementPolicy.createBookieNode(TopologyAwareEnsemblePlacementPolicy.java:794)
+        at org.apache.bookkeeper.client.RegionAwareEnsemblePlacementPolicy.handleBookiesThatJoined(RegionAwareEnsemblePlacementPolicy.java:135)
+        at org.apache.bookkeeper.client.TopologyAwareEnsemblePlacementPolicy.onClusterChanged(TopologyAwareEnsemblePlacementPolicy.java:665)
+        at org.apache.bookkeeper.client.RackawareEnsemblePlacementPolicyImpl.onClusterChanged(RackawareEnsemblePlacementPolicyImpl.java:80)
+        at org.apache.bookkeeper.client.RackawareEnsemblePlacementPolicy.onClusterChanged(RackawareEnsemblePlacementPolicy.java:92)
+        at org.apache.bookkeeper.client.BookieWatcherImpl.processWritableBookiesChanged(BookieWatcherImpl.java:197)
+        - locked <0x00000003015401c8> (a org.apache.bookkeeper.client.BookieWatcherImpl)
+        at org.apache.bookkeeper.client.BookieWatcherImpl.lambda$initialBlockingBookieRead$1(BookieWatcherImpl.java:233)
+        at org.apache.bookkeeper.client.BookieWatcherImpl$$Lambda$186/0x0000000800386040.onBookiesChanged(Unknown Source)
+        at org.apache.pulsar.metadata.bookkeeper.PulsarRegistrationClient.lambda$updatedBookies$6(PulsarRegistrationClient.java:183)
+        at org.apache.pulsar.metadata.bookkeeper.PulsarRegistrationClient$$Lambda$1802/0x0000000800ab1c40.run(Unknown Source)
+        at java.util.concurrent.Executors$RunnableAdapter.call(java.base@11.0.14-ga/Executors.java:515)
+        at java.util.concurrent.FutureTask.run(java.base@11.0.14-ga/FutureTask.java:264)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(java.base@11.0.14-ga/ScheduledThreadPoolExecutor.java:304)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@11.0.14-ga/ThreadPoolExecutor.java:1128)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@11.0.14-ga/ThreadPoolExecutor.java:628)
+        at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+        at java.lang.Thread.run(java.base@11.0.14-ga/Thread.java:829)
+
+```
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [X] I'm willing to submit a PR!

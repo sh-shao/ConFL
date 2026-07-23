@@ -1,0 +1,56 @@
+Deadlock found in TransportSet
+When running benchmarks where the client started up faster than the server, The first few calls failed as unavailable.  Our internal deadlock detector seems to think there is a deadlock around here:
+
+```
+Deadlock(s) found:
+"grpc-client-net-1-32" daemon prio=5 Id=175 BLOCKED on java.lang.Object@7eeb2e6b owned by "grpc-client-app-5" Id=119
+ io.grpc.internal.DelayedClientTransport.startBackoff(DelayedClientTransport.java:323)
+ io.grpc.internal.TransportSet.scheduleBackoff(TransportSet.java:235)
+ io.grpc.internal.TransportSet.access$1500(TransportSet.java:61)
+ io.grpc.internal.TransportSet$TransportListener.transportShutdown(TransportSet.java:440)
+ io.grpc.netty.ClientTransportLifecycleManager.notifyShutdown(ClientTransportLifecycleManager.java:68)
+ io.grpc.netty.ClientTransportLifecycleManager.notifyTerminated(ClientTransportLifecycleManager.java:84)
+ io.grpc.netty.NettyClientTransport$4.operationComplete(NettyClientTransport.java:181)
+ io.grpc.netty.NettyClientTransport$4.operationComplete(NettyClientTransport.java:175)
+ io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:514)
+ io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:488)
+ io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:427)
+ io.netty.util.concurrent.DefaultPromise.setFailure(DefaultPromise.java:120)
+ io.netty.channel.DefaultChannelPromise.setFailure(DefaultChannelPromise.java:87)
+ io.grpc.netty.ProtocolNegotiators$AbstractBufferingHandler.fail(ProtocolNegotiators.java:436)
+ io.grpc.netty.ProtocolNegotiators$AbstractBufferingHandler.exceptionCaught(ProtocolNegotiators.java:376)
+ io.netty.channel.AbstractChannelHandlerContext.invokeExceptionCaught(AbstractChannelHandlerContext.java:295)
+ io.netty.channel.AbstractChannelHandlerContext.invokeExceptionCaught(AbstractChannelHandlerContext.java:274)
+ io.netty.channel.AbstractChannelHandlerContext.fireExceptionCaught(AbstractChannelHandlerContext.java:266)
+ io.grpc.netty.NettyClientTransport$3.operationComplete(NettyClientTransport.java:165)
+ io.grpc.netty.NettyClientTransport$3.operationComplete(NettyClientTransport.java:156)
+ io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:514)
+ io.netty.util.concurrent.DefaultPromise.notifyListeners0(DefaultPromise.java:507)
+ io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:486)
+ io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:427)
+ io.netty.util.concurrent.DefaultPromise.tryFailure(DefaultPromise.java:129)
+ io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.fulfillConnectPromise(AbstractNioChannel.java:321)
+ io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.finishConnect(AbstractNioChannel.java:337)
+ io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:588)
+ io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:512)
+ io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:426)
+ io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:398)
+ io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:877)
+ io.netty.util.concurrent.DefaultThreadFactory$DefaultRunnableDecorator.run(DefaultThreadFactory.java:144)
+ java.lang.Thread.run(Thread.java:745)
+
+
+"grpc-client-app-5" daemon prio=5 Id=119 BLOCKED on java.lang.Object@17902cf5 owned by "grpc-client-net-1-32" Id=175
+ io.grpc.internal.InUseStateAggregator.updateObjectInUse(InUseStateAggregator.java:51)
+ io.grpc.internal.TransportSet$BaseTransportListener.transportInUse(TransportSet.java:345)
+ io.grpc.internal.DelayedClientTransport.newStream(DelayedClientTransport.java:128)
+ io.grpc.internal.DelayedClientTransport$PendingStream.createRealStream(DelayedClientTransport.java:382)
+ io.grpc.internal.DelayedClientTransport$PendingStream.access$100(DelayedClientTransport.java:369)
+ io.grpc.internal.DelayedClientTransport$2.run(DelayedClientTransport.java:261)
+ java.util.concurrent.ForkJoinTask$RunnableExecuteAction.exec(ForkJoinTask.java:1402)
+ java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:289)
+ java.util.concurrent.ForkJoinPool$WorkQueue.runTask(ForkJoinPool.java:1056)
+ java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:1692)
+ java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:157)
+
+```

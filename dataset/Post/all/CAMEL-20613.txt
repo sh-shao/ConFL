@@ -1,0 +1,132 @@
+ConcurrentModificationException when a new endpoint is created with toD
+_java.util.ConcurrentModificationException_ is thrown when a thread modifies org.apache.camel.impl.engine.AbstractCamelContext#endpointStrategies e.g. while creating an instance of a route template / kamelet with _interceptSendToEndpoint_ (see org.apache.camel.reifier.InterceptSendToEndpointReifier#createProcessor) and another thread iterates over this list. There are several methods that iterate over this field (see stacktraces below).
+
+A possible fix would be to replace ArrayList with a different thread-safe collection, but there may be a case where a newly added _org.apache.camel.spi.EndpointStrategy_ is not applied to an endpoint that was being created in parallel (currently it is also possible). A more robust solution would be to synchronise all methods that modify or iterate over the list of endpoint strategies in org.apache.camel.impl.engine.AbstractCamelContext (fortunately the field is private and org.apache.camel.impl.engine.AbstractCamelContext#getEndpointStrategies is package-private):
+ - org.apache.camel.impl.engine.AbstractCamelContext#doGetEndpoint
+ - org.apache.camel.impl.engine.AbstractCamelContext#addEndpointToRegistry
+
+However, it can slow down the startup of and updates to the Camel context. It may also introduce new deadlock issues.
+
+Pull requests with the former fix attached.
+{code:java}
+org.apache.camel.ResolveEndpointFailedException: Failed to resolve endpoint: kamelet://my-kamelet?someParameter=someValue due to: null
+	at org.apache.camel.impl.engine.AbstractCamelContext.doGetEndpoint(AbstractCamelContext.java:869)
+	at org.apache.camel.impl.engine.DefaultCamelContextExtension.getEndpoint(DefaultCamelContextExtension.java:156)
+	at org.apache.camel.support.CamelContextHelper.getMandatoryEndpoint(CamelContextHelper.java:74)
+	at org.apache.camel.support.ExchangeHelper.resolveEndpoint(ExchangeHelper.java:115)
+	at org.apache.camel.support.ExchangeHelper.resolveEndpoint(ExchangeHelper.java:94)
+	at org.apache.camel.processor.SendDynamicProcessor.resolveEndpoint(SendDynamicProcessor.java:295)
+	at org.apache.camel.processor.SendDynamicProcessor.process(SendDynamicProcessor.java:156)
+	at org.apache.camel.processor.errorhandler.RedeliveryErrorHandler$SimpleTask.run(RedeliveryErrorHandler.java:475)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor$Worker.executeReactiveWork(DefaultReactiveExecutor.java:196)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor$Worker.schedule(DefaultReactiveExecutor.java:164)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor.schedule(DefaultReactiveExecutor.java:54)
+	at org.apache.camel.processor.MulticastProcessor.lambda$schedule$1(MulticastProcessor.java:369)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:577)
+	at java.base/java.util.concurrent.FutureTask.run$$$capture(FutureTask.java:317)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1589)
+Caused by: java.util.ConcurrentModificationException: null
+	at java.base/java.util.ArrayList$Itr.checkForComodification(ArrayList.java:1013)
+	at java.base/java.util.ArrayList$Itr.next(ArrayList.java:967)
+	at org.apache.camel.impl.engine.AbstractCamelContext.addEndpointToRegistry(AbstractCamelContext.java:911)
+	at org.apache.camel.impl.engine.AbstractCamelContext.doGetEndpoint(AbstractCamelContext.java:855)
+	... 17 common frames omitted
+{code}
+{code:java}
+org.apache.camel.ResolveEndpointFailedException: Failed to resolve endpoint: kamelet://my-kamelet?someParameter=someValue to: org.apache.camel.component.kamelet.KameletNotFoundException: Kamelet with id my-kamelet not found in locations: classpath:/kamelets
+	at org.apache.camel.impl.engine.AbstractCamelContext.doGetEndpoint(AbstractCamelContext.java:869)
+	at org.apache.camel.impl.engine.DefaultCamelContextExtension.getEndpoint(DefaultCamelContextExtension.java:156)
+	at org.apache.camel.support.CamelContextHelper.getMandatoryEndpoint(CamelContextHelper.java:74)
+	at org.apache.camel.support.ExchangeHelper.resolveEndpoint(ExchangeHelper.java:115)
+	at org.apache.camel.support.ExchangeHelper.resolveEndpoint(ExchangeHelper.java:94)
+	at org.apache.camel.processor.SendDynamicProcessor.resolveEndpoint(SendDynamicProcessor.java:295)
+	at org.apache.camel.processor.SendDynamicProcessor.process(SendDynamicProcessor.java:156)
+	at org.apache.camel.processor.errorhandler.RedeliveryErrorHandler$SimpleTask.run(RedeliveryErrorHandler.java:475)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor$Worker.executeReactiveWork(DefaultReactiveExecutor.java:196)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor$Worker.schedule(DefaultReactiveExecutor.java:164)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor.schedule(DefaultReactiveExecutor.java:54)
+	at org.apache.camel.processor.MulticastProcessor.lambda$schedule$1(MulticastProcessor.java:369)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:577)
+	at java.base/java.util.concurrent.FutureTask.run$$$capture(FutureTask.java:317)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1589)
+Caused by: org.apache.camel.RuntimeCamelException: org.apache.camel.component.kamelet.KameletNotFoundException: Kamelet with id my-kamelet not found in locations: classpath:/kamelets
+	at org.apache.camel.RuntimeCamelException.wrapRuntimeException(RuntimeCamelException.java:66)
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.track(KameletComponent.java:450)
+	at org.apache.camel.component.kamelet.KameletComponent$1.doInit(KameletComponent.java:160)
+	at org.apache.camel.support.service.BaseService.init(BaseService.java:78)
+	at org.apache.camel.support.service.ServiceHelper.initService(ServiceHelper.java:84)
+	at org.apache.camel.impl.engine.InternalServiceManager.doAddService(InternalServiceManager.java:121)
+	at org.apache.camel.impl.engine.AbstractCamelContext.addService(AbstractCamelContext.java:1354)
+	at org.apache.camel.impl.engine.AbstractCamelContext.addService(AbstractCamelContext.java:1349)
+	at org.apache.camel.impl.engine.AbstractCamelContext.addService(AbstractCamelContext.java:1344)
+	at org.apache.camel.impl.engine.AbstractCamelContext.doGetEndpoint(AbstractCamelContext.java:853)
+	... 17 common frames omitted
+Caused by: org.apache.camel.component.kamelet.KameletNotFoundException: Kamelet with id my-kamelet not found in locations: classpath:/kamelets
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.createRouteForEndpoint(KameletComponent.java:421)
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.track(KameletComponent.java:448)
+	... 25 common frames omitted
+Caused by: java.util.ConcurrentModificationException: null
+	at java.base/java.util.ArrayList$Itr.checkForComodification(ArrayList.java:1013)
+	at java.base/java.util.ArrayList$Itr.next(ArrayList.java:967)
+	at org.apache.camel.model.RouteDefinitionHelper.prepareRouteForInit(RouteDefinitionHelper.java:307)
+	at org.apache.camel.model.RouteDefinitionHelper.prepareRouteImp(RouteDefinitionHelper.java:392)
+	at org.apache.camel.model.RouteDefinitionHelper.prepareRoute(RouteDefinitionHelper.java:351)
+	at org.apache.camel.model.RoutesDefinition.prepareRoute(RoutesDefinition.java:326)
+	at org.apache.camel.impl.DefaultModel.addRouteFromTemplate(DefaultModel.java:508)
+	at org.apache.camel.impl.DefaultModel.addRouteFromTemplate(DefaultModel.java:366)
+	at org.apache.camel.impl.DefaultCamelContext.addRouteFromTemplate(DefaultCamelContext.java:463)
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.createRouteForEndpoint(KameletComponent.java:409)
+	... 26 common frames omitted
+{code}
+{code:java}
+org.apache.camel.ResolveEndpointFailedException: Failed to resolve endpoint: kamelet://my-kamelet?someParameter=someValue due to: org.apache.camel.component.kamelet.KameletNotFoundException: Kamelet with id my-kamelet not found in locations: classpath:/kamelets
+	at org.apache.camel.impl.engine.AbstractCamelContext.doGetEndpoint(AbstractCamelContext.java:869)
+	at org.apache.camel.impl.engine.DefaultCamelContextExtension.getEndpoint(DefaultCamelContextExtension.java:156)
+	at org.apache.camel.support.CamelContextHelper.getMandatoryEndpoint(CamelContextHelper.java:74)
+	at org.apache.camel.support.ExchangeHelper.resolveEndpoint(ExchangeHelper.java:115)
+	at org.apache.camel.support.ExchangeHelper.resolveEndpoint(ExchangeHelper.java:94)
+	at org.apache.camel.processor.SendDynamicProcessor.resolveEndpoint(SendDynamicProcessor.java:295)
+	at org.apache.camel.processor.SendDynamicProcessor.process(SendDynamicProcessor.java:156)
+	at org.apache.camel.processor.errorhandler.RedeliveryErrorHandler$SimpleTask.run(RedeliveryErrorHandler.java:475)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor$Worker.executeReactiveWork(DefaultReactiveExecutor.java:196)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor$Worker.schedule(DefaultReactiveExecutor.java:164)
+	at org.apache.camel.impl.engine.DefaultReactiveExecutor.schedule(DefaultReactiveExecutor.java:54)
+	at org.apache.camel.processor.MulticastProcessor.lambda$schedule$1(MulticastProcessor.java:369)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:577)
+	at java.base/java.util.concurrent.FutureTask.run$$$capture(FutureTask.java:317)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1589)
+Caused by: org.apache.camel.RuntimeCamelException: org.apache.camel.component.kamelet.KameletNotFoundException: Kamelet with id my-kamelet not found in locations: classpath:/kamelets
+	at org.apache.camel.RuntimeCamelException.wrapRuntimeException(RuntimeCamelException.java:66)
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.track(KameletComponent.java:450)
+	at org.apache.camel.component.kamelet.KameletComponent$1.doInit(KameletComponent.java:160)
+	at org.apache.camel.support.service.BaseService.init(BaseService.java:78)
+	at org.apache.camel.support.service.ServiceHelper.initService(ServiceHelper.java:84)
+	at org.apache.camel.impl.engine.InternalServiceManager.doAddService(InternalServiceManager.java:121)
+	at org.apache.camel.impl.engine.AbstractCamelContext.addService(AbstractCamelContext.java:1354)
+	at org.apache.camel.impl.engine.AbstractCamelContext.addService(AbstractCamelContext.java:1349)
+	at org.apache.camel.impl.engine.AbstractCamelContext.addService(AbstractCamelContext.java:1344)
+	at org.apache.camel.impl.engine.AbstractCamelContext.doGetEndpoint(AbstractCamelContext.java:853)
+	... 17 common frames omitted
+Caused by: org.apache.camel.component.kamelet.KameletNotFoundException: Kamelet with id my-kamelet not found in locations: classpath:/kamelets
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.createRouteForEndpoint(KameletComponent.java:421)
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.track(KameletComponent.java:448)
+	... 25 common frames omitted
+Caused by: java.util.ConcurrentModificationException: null
+	at java.base/java.util.ArrayList$Itr.checkForComodification(ArrayList.java:1013)
+	at java.base/java.util.ArrayList$Itr.next(ArrayList.java:967)
+	at org.apache.camel.model.RouteDefinitionHelper.validateUniqueIds(RouteDefinitionHelper.java:265)
+	at org.apache.camel.impl.DefaultModel.addRouteFromTemplate(DefaultModel.java:496)
+	at org.apache.camel.impl.DefaultModel.addRouteFromTemplate(DefaultModel.java:366)
+	at org.apache.camel.impl.DefaultCamelContext.addRouteFromTemplate(DefaultCamelContext.java:463)
+	at org.apache.camel.component.kamelet.KameletComponent$LifecycleHandler.createRouteForEndpoint(KameletComponent.java:409)
+	... 26 common frames omitted
+{code}

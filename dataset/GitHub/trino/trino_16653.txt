@@ -1,0 +1,63 @@
+Spurious CachingHiveMetastore failure when merging statistics
+Found on CI but problem seems not test-confined 
+
+https://github.com/trinodb/trino/actions/runs/4480868638/jobs/7877153116?pr=16650
+
+```
+Error:  io.trino.plugin.hive.TestHiveConnectorTest.testInsertRowConcurrently  Time elapsed: 0.593 s  <<< FAILURE!
+java.lang.IllegalArgumentException: Exception does not have TrinoException cause
+	at io.trino.testing.QueryAssertions.lambda$getTrinoExceptionCause$4(QueryAssertions.java:513)
+	at java.base/java.util.Optional.orElseThrow(Optional.java:403)
+	at io.trino.testing.QueryAssertions.getTrinoExceptionCause(QueryAssertions.java:513)
+	at io.trino.testing.BaseConnectorTest.lambda$testInsertRowConcurrently$52(BaseConnectorTest.java:4338)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+Caused by: io.trino.testing.QueryFailedException: java.lang.UnsupportedOperationException: The operation is not supported, as in inherently races with cache invalidation
+	at io.trino.testing.AbstractTestingTrinoClient.execute(AbstractTestingTrinoClient.java:122)
+	at io.trino.testing.AbstractTestingTrinoClient.execute(AbstractTestingTrinoClient.java:85)
+	at io.trino.testing.DistributedQueryRunner.execute(DistributedQueryRunner.java:477)
+	at io.trino.testing.BaseConnectorTest.lambda$testInsertRowConcurrently$52(BaseConnectorTest.java:4334)
+	... 4 more
+Caused by: com.google.common.util.concurrent.UncheckedExecutionException: java.lang.UnsupportedOperationException: The operation is not supported, as in inherently races with cache invalidation
+	at com.google.common.cache.LocalCache$Segment.get(LocalCache.java:2055)
+	at com.google.common.cache.LocalCache.get(LocalCache.java:3966)
+	at com.google.common.cache.LocalCache$LocalManualCache.get(LocalCache.java:4863)
+	at io.trino.collect.cache.EvictableCache.get(EvictableCache.java:114)
+	at io.trino.collect.cache.CacheUtils.uncheckedCacheGet(CacheUtils.java:28)
+	at io.trino.plugin.hive.metastore.cache.CachingHiveMetastore.get(CachingHiveMetastore.java:395)
+	at io.trino.plugin.hive.metastore.cache.CachingHiveMetastore.getTableStatistics(CachingHiveMetastore.java:499)
+	at io.trino.plugin.hive.HiveMetastoreClosure.getTableStatistics(HiveMetastoreClosure.java:104)
+	at io.trino.plugin.hive.metastore.SemiTransactionalHiveMetastore.getTableStatistics(SemiTransactionalHiveMetastore.java:300)
+	at io.trino.plugin.hive.metastore.SemiTransactionalHiveMetastore.finishChangingExistingTable(SemiTransactionalHiveMetastore.java:680)
+	at io.trino.plugin.hive.HiveMetadata.finishChangingTable(HiveMetadata.java:2139)
+	at io.trino.plugin.hive.HiveMetadata.finishInsert(HiveMetadata.java:2058)
+	at io.trino.plugin.base.classloader.ClassLoaderSafeConnectorMetadata.finishInsert(ClassLoaderSafeConnectorMetadata.java:528)
+	at io.trino.metadata.MetadataManager.finishInsert(MetadataManager.java:933)
+	at io.trino.sql.planner.LocalExecutionPlanner.lambda$createTableFinisher$4(LocalExecutionPlanner.java:4133)
+	at io.trino.operator.TableFinishOperator.getOutput(TableFinishOperator.java:319)
+	at io.trino.operator.Driver.processInternal(Driver.java:402)
+	at io.trino.operator.Driver.lambda$process$8(Driver.java:305)
+	at io.trino.operator.Driver.tryWithLock(Driver.java:701)
+	at io.trino.operator.Driver.process(Driver.java:297)
+	at io.trino.operator.Driver.processForDuration(Driver.java:268)
+	at io.trino.execution.SqlTaskExecution$DriverSplitRunner.processFor(SqlTaskExecution.java:838)
+	at io.trino.execution.executor.PrioritizedSplitRunner.process(PrioritizedSplitRunner.java:165)
+	at io.trino.execution.executor.TaskExecutor$TaskRunner.run(TaskExecutor.java:537)
+	at io.trino.$gen.Trino_testversion____20230321_161302_17427.run(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+Caused by: java.lang.UnsupportedOperationException: The operation is not supported, as in inherently races with cache invalidation
+	at io.trino.collect.cache.EvictableCache$1.putIfAbsent(EvictableCache.java:295)
+	at java.base/java.util.concurrent.ConcurrentMap.compute(ConcurrentMap.java:427)
+	at io.trino.plugin.hive.metastore.cache.CachingHiveMetastore.getTableStatistics(CachingHiveMetastore.java:515)
+	at io.trino.plugin.hive.metastore.cache.CachingHiveMetastore.lambda$getTableStatistics$7(CachingHiveMetastore.java:499)
+	at com.google.common.cache.LocalCache$LocalManualCache$1.load(LocalCache.java:4868)
+	at com.google.common.cache.LocalCache$LoadingValueReference.loadFuture(LocalCache.java:3533)
+	at com.google.common.cache.LocalCache$Segment.loadSync(LocalCache.java:2282)
+	at com.google.common.cache.LocalCache$Segment.lockedGetOrLoad(LocalCache.java:2159)
+	at com.google.common.cache.LocalCache$Segment.get(LocalCache.java:2049)
+	... 27 more
+```

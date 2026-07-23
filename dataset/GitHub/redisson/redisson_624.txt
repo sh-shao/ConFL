@@ -1,0 +1,2 @@
+Incorrect RedissonRedLock.tryLock behaviour
+Lock could acquired by several threads at once when `leaseTime` parameter less than `waitTime` parameter passed into `RedissonRedLock.tryLock` 

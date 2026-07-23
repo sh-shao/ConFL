@@ -1,0 +1,66 @@
+severe bug !! when sending read operation to new slave loading previous data after failover
+﻿### Expected behavior
+
+### Actual behavior
+
+### Steps to reproduce or test case
+- ReadMode : Slave 
+- userClusterServer
+- ElastiCache Redis Cluster Enabled. 
+- 1 Master / 1 Slave 
+
+SourceCode------------------------------------------------------------
+* i make RedissClient when servlet server start up at frist like below.
+* i store redissonClient to static variable.
+
+Config config = new Config();
+config.setCodec(new StringCodec());
+config.useClusterServers()
+          .setScanInterval(2000)
+          .addNodeAddress(clusterNodesAddress)
+          .setReadMode(ReadMode.SLAVE);
+redissonClient = Redisson.create(config);
+
+* on each servlet request, i send read command like below to redis, in this case, it is problem. 
+result = redissonClient.getScript().eval(Mode.READ_ONLY, script, RScript.ReturnType.VALUE), keyList, argvList.toArray());
+
+* on each servlet request, i send read or write command like below to redis,  in this case, it is ok 
+result = redissonClient.getScript().eval(Mode.READ_WRITE, script, RScript.ReturnType.VALUE), keyList, argvList.toArray());
+--------------------------------------------------------------------------
+1. send read operation each reqeuest on servlet server continusly.
+2. read operation is going slave well
+3. start failover. 
+4. master redis is down.
+5. occured error for 60 seconds. 
+6. slave is changed to master. 
+7. 'cluster nodes' info is changed 1 master.  no slave.
+8. redisson recognize changed master correctly and read from master instedad of slave. 
+9. read operation is going master well.
+10. previous down master is up as slave.
+11. 'cluster nodes' info is changed 1 master and 1 slave.
+11. redisson recognize new slave
+------------------problem is started.
+12. slave is loading data for syncing with master. it takes 10 minutes to load all data completely.
+13. during 10 minutes, servlet server is going strange behavior and throuput is very lower and don't return any exception. i think some threads is hanging around Redisson connection with new slave loading data.
+14. actually i expected returning error with timeout. why it is not returning any error until slave is completed loading data.
+15. after 10 minutes which completed load data from slave. it is going back to normal and throuput become higer. 
+16.  however, read operation with Mode.ReadOnly is going both master and slave not going to slave only.
+
+
+* problem.
+1. when loading data at slave, redisson is sending read operation to slave. and read opeartion thread is hanging aroud somewhere in redisson.
+2. read operation with Mode.ReadOnly is going well to slave only. however after failover, read operation is going both master and slave not going to slave only.
+
+
+### Redis version
+4.0.10
+
+### Redisson version
+java 7 latest version 2.12.3 
+
+### Redisson configuration
+- ReadMode : Slave 
+- userClusterServer
+-ElastiCache Redis Cluster Enabled. 
+- 1 Master / 1 Slave 
+- default options

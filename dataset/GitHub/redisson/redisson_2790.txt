@@ -1,0 +1,47 @@
+Thread that called tryLock stops in standby state
+Hello,
+spring-application using redisson-spring-boot-starter:3.12.5, kill the redisServer, and send a request to call the tryLock, the thread will fall into waiting state.
+Running the redisServer again does not resolve the issue.
+In particular, Scheduler threads cause serious problems.
+Is there a solution?
+
+Below is the test code.
+
+```
+public class RedisRockTest {
+
+    @Test
+    public void test() throws InterruptedException, ExecutionException {
+        RedissonClient redisson = Redisson.create();
+
+        RLock lock = redisson.getLock("myLock");
+        // kill RedisServer while main thread is sleeping.
+        Thread.sleep(5000);
+        boolean res = lock.tryLock(5, 10, TimeUnit.SECONDS);
+        if (res) {
+            System.out.println("Somethings to do. but not work.");
+            lock.unlock();
+        }
+
+        System.out.println("No printing...");
+    }
+
+}
+```
+
+This result is Thread dump.
+```
+"main" #1 prio=5 os_prio=31 cpu=1036.24ms elapsed=42.82s tid=0x00007faeb300e000 nid=0x1803 in Object.wait()  [0x000070000363c000]
+   java.lang.Thread.State: WAITING (on object monitor)
+	at java.lang.Object.wait(java.base@11.0.2/Native Method)
+	- waiting on <0x000000061f2a24a0> (a io.netty.util.concurrent.ImmediateEventExecutor$ImmediatePromise)
+	at java.lang.Object.wait(java.base@11.0.2/Object.java:328)
+	at io.netty.util.concurrent.DefaultPromise.await(DefaultPromise.java:252)
+	- waiting to re-lock in wait() <0x000000061f2a24a0> (a io.netty.util.concurrent.ImmediateEventExecutor$ImmediatePromise)
+	at org.redisson.misc.RedissonPromise.await(RedissonPromise.java:110)
+	at org.redisson.misc.RedissonPromise.await(RedissonPromise.java:35)
+	at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:139)
+	at org.redisson.RedissonObject.get(RedissonObject.java:90)
+	at org.redisson.RedissonLock.tryAcquire(RedissonLock.java:221)
+	at org.redisson.RedissonLock.tryLock(RedissonLock.java:394)
+```

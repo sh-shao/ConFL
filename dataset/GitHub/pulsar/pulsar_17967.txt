@@ -1,0 +1,37 @@
+[BUG]Unknown reason causes getPositionAfterN infinite loop
+@poorbarcode https://github.com/apache/pulsar/issues/16859
+
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+pulsar 2.9.2, bookkeeper 4.14.4
+
+
+### Minimal reproduce step
+
+![3DA3DF46-3111-44D0-B6D8-956AF6BD92D2](https://user-images.githubusercontent.com/9923278/194686027-185bb207-1e07-4876-a429-9711fd198f9c.png)
+
+![B89CE8F5-C446-4615-9D55-53CB76432F8B](https://user-images.githubusercontent.com/9923278/194686050-e74ad5d8-9aa7-4528-be4c-69d6ed344256.png)
+
+![B705F7C9-4DC8-4A22-9ABD-3C7B53987EFB](https://user-images.githubusercontent.com/9923278/194686062-6f5dc440-1e68-4dc7-a6c5-36ac757dfe18.png)
+
+
+### What did you expect to see?
+
+Return normally, the task is executed normally
+
+### What did you see instead?
+
+The BookKeeperClientWorker-OrderedExecutor-15-0 thread has been executing the getPositionAfterN method, and its thread pool task accumulation has reached more than 700,000
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

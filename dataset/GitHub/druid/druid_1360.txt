@@ -1,0 +1,6 @@
+Race condition in autoscaling terminates nodes that were just assigned tasks
+It is possible for the indexing service auto-scaling to terminate nodes that have just been assigned a task, but that have not updated the task status to running yet.
+
+Autoscaling currently only relies on task status provided by the workers, but does not take into account tasks that are known to be running or about to run on a given worker. If you are unlucky and autoscaling checks right after the task has been assigned, but right before the worker announces the task status, and the worker is not running any other tasks, your tasks will get killed.
+
+Running task replicas may not help in this situations. If the indexing service was recently updated and spawned new middle-managers that aren't running anything yet, it is possible for multiple nodes to be killed that were about to run tasks.

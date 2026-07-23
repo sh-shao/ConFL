@@ -1,0 +1,42 @@
+Missing manifest file when releasing Hive Metastore's the lock has failed
+`HiveMetastoreTableOperations` using aquireLock and releaseLock while committing to iceberg existing table.
+`releaseLock` happens in the `finally` block and that step can also fail, and that result into that missing manifest file.
+
+Steps To Reproduce:
+
+```
+CREATE TABLE tbl (              
+    id integer,                                    
+    name varchar,                                  
+    part varchar                                   
+ )                                                 
+ WITH (                                            
+    location = '/path', 
+    format = 'PARQUET'
+);
+
+INSERT INTO tbl VALUES (1,'product', 'part1');
+
+```
+
+if [HiveMetastoreTableOperations's](https://github.com/trinodb/trino/blob/master/plugin/trino-iceberg/src/main/java/io/trino/plugin/iceberg/catalog/hms/HiveMetastoreTableOperations.java#L98) line failed to execute at Metastore level. It can fail for Metastore timeout or if lock is missing from HMS side it can throw `NoSuchLockException` which is an `Exception` and not `RuntimeException`
+
+Then after the failure, insert/select or any query on this table will fail, and table becomes unusable:
+
+```
+INSERT INTO tbl VALUES (2,'product', 'part1');
+
+Query 20220829_214404_00026_j9tvf, FAILED, 3 nodes
+Splits: 68 total, 67 done (98.53%)
+0.47 [0 rows, 0B] [0 rows/s, 0B/s]
+
+Query 20220829_214404_00026_j9tvf failed: Failed to get status for file: //path/tbl/metadata/snap-5290494244823571353-1-34a427a1-054c-4ecf-a49b-f3e3ef9203a0.avro
+
+```
+
+Reason would be when the release lock step was failed, the Iceberg's [commit](https://github.com/apache/iceberg/blob/cc7e6d9fa259707a5c690b3534ea6b5c7da3fc05/core/src/main/java/org/apache/iceberg/BaseTransaction.java#L395) handles only `RuntimeException` so in case of `NoSuchLockException` being thrown then it has not done any step.
+So, looks like the new snapshot is created and pointing to a new manifest file in the previous step, but that file is missing/not created.
+
+
+related issues: https://github.com/trinodb/trino/issues/14104 https://github.com/trinodb/trino/issues/12581
+

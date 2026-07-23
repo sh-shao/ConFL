@@ -1,0 +1,45 @@
+RedissonRedLock.tryLock(long waitTime, long leaseTime, TimeUnit unit) still have something wrong
+reference from the issue #1175 after it is closed. 
+
+I change the test case in [RedissonRedLockTest.testLockSuccess()](https://github.com/redisson/redisson/blob/master/redisson/src/test/java/org/redisson/RedissonRedLockTest.java#L162) like this:
+```
+        RedisProcess redis1 = redisTestMultilockInstance();
+        RedisProcess redis2 = redisTestMultilockInstance();
+
+        RedissonClient client1 = createClient(redis1.getRedisServerAddressAndPort());
+        RedissonClient client2 = createClient(redis2.getRedisServerAddressAndPort());
+
+        RLock lock1 = client1.getLock("lock1");
+        RLock lock2 = client1.getLock("lock2");
+        RLock lock3 = client2.getLock("lock3");
+        
+        Thread t1 = new Thread() {
+            public void run() {
+                lock2.lock();
+            };
+        };
+        t1.start();
+        t1.join();
+        
+        RedissonMultiLock lock = new RedissonRedLock(lock1, lock2, lock3);
+
+        try {
+            assertThat(lock.tryLock(500, 5000, TimeUnit.MILLISECONDS)).isTrue();
+            Thread.sleep(3000);
+        } catch (InterruptedException e) {
+        }
+        lock.unlock();
+
+        client1.shutdown();
+        client2.shutdown();
+        
+        assertThat(redis1.stop()).isEqualTo(0);
+        assertThat(redis2.stop()).isEqualTo(0);
+```
+
+The test case above will fail in case of that lock1/lock2 is locked first in thread t1. However, it will pass in case of lock3 is locked first in thread t1.
+
+The expected behavior is as follows:
+
+1. No matter which lock is locked first in thread t1, the Red Lock will always can be locked or cannot.
+2. In this case, the Red Lock should always be locked for most of the lock is available.

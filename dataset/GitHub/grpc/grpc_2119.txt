@@ -1,0 +1,4 @@
+Excess contention in ManagedChannelImpl.exitIdleMode
+Each RPC needs a transport, and thus calls ManagedChannelImpl's transport provider.  This tries to make the transport wake up, but does so under a lock.  Profiling reveals a high amount of contention on this lock.  If possible we should look at eliding the lock and using a volatile read to get the loadbalancer out of it.
+
+cc @zhangkun83 

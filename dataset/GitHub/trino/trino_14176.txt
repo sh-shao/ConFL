@@ -1,0 +1,88 @@
+An increasing number of WAITING state threads in JDBC driver
+version: presto-jdbc:329
+jdk version: 1.8.0_261
+
+`MAX_QUEUED_ROWS` is declared in`AsyncIterator`, which means that asynchronous threads named `Presto JDBC worker-%d` will be blocked when the amount of data is greater than`MAX_QUEUED_ROWS`.
+
+```java
+        private static final int MAX_QUEUED_ROWS = 50_000;
+        private static final ExecutorService executorService = newCachedThreadPool(daemonThreadsNamed("Presto JDBC worker-%d"));
+
+        private final StatementClient client;
+        private final BlockingQueue<T> rowQueue = new ArrayBlockingQueue<>(MAX_QUEUED_ROWS);
+        private final CompletableFuture<Void> future;
+        private Thread parent;
+
+        public AsyncIterator(Iterator<T> dataIterator, StatementClient client, Thread parent)
+        {
+            requireNonNull(dataIterator, "dataIterator is null");
+            this.parent = parent;
+            this.client = client;
+            this.future = CompletableFuture.supplyAsync(() -> {
+                while (dataIterator.hasNext()) {
+                    try {
+                        // when data size is greater than 50_000, will be blocked.
+                        rowQueue.put(dataIterator.next());
+                    }
+                    catch (InterruptedException e) {
+                        interrupt(e);
+                    }
+                }
+                return null;
+            }, executorService);
+        }
+
+        public void cancel()
+        {
+            future.cancel(true);
+        }
+
+        public void interrupt(InterruptedException e)
+        {
+            client.close();
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(new SQLException("ResultSet thread was interrupted", e));
+        }
+```
+
+When a user submit a SQL query and the amount of data is larger than `MAX_QUEUED_ROWS`, the queue will be full. If the user call `close()` without getting the data out from the queue，we will find an increasing number of WAITING state threads over time.
+
+The code to close the query is shown below.
+```java
+    @Override
+    public void close()
+            throws SQLException
+    {
+        closed.set(true);
+        ((AsyncIterator) results).cancel();
+        client.close();
+    }
+```
+We notice that the `close` method eventually calls the `future.cancel (true)` method, the source code of `cancel` in `CompletableFuture` is shown below.
+```java
+
+    /**
+     * If not already completed, completes this CompletableFuture with
+     * a {@link CancellationException}. Dependent CompletableFutures
+     * that have not already completed will also complete
+     * exceptionally, with a {@link CompletionException} caused by
+     * this {@code CancellationException}.
+     *
+     * @param mayInterruptIfRunning this value has no effect in this
+     * implementation because interrupts are not used to control
+     * processing.
+     *
+     * @return {@code true} if this task is now cancelled
+     */
+    public boolean cancel(boolean mayInterruptIfRunning) {
+        boolean cancelled = (result == null) &&
+            internalComplete(new AltResult(new CancellationException()));
+        postComplete();
+        return cancelled || isCancelled();
+    }
+
+```
+
+We notice the parameter `mayInterruptIfRunning` has no effect in this implementation because interrupts are not used to control processing, so the threads named `Presto JDBC worker-%d` will be blocked forever. And in the latest version, the code has not changed much about it. 
+
+Please correct me if i‘m wrong :) 

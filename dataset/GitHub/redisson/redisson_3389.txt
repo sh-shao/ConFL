@@ -1,0 +1,31 @@
+RMapCacheReactive.getLock returns org.redisson.RedissonLock instead of org.redisson.api.RLockReactive
+<!--
+Сonsider Redisson PRO https://redisson.pro version for advanced features and support by SLA.
+-->
+
+**Expected behavior**
+RMapCacheReactive.getLock should return an instance of org.redisson.api.RLockReactive
+
+**Actual behavior**
+RMapCacheReactive.getLock returns an instance of org.redisson.RedissonLock and throws exception:
+````
+java.lang.ClassCastException: class org.redisson.RedissonLock cannot be cast to class org.redisson.api.RLockReactive (org.redisson.RedissonLock and org.redisson.api.RLockReactive are in unnamed module of loader 'app')
+````
+
+**Steps to reproduce or test case**
+Start Redis from docker: `docker run -p 6379:6379 redis:latest`
+Run the following code:
+````
+    RedissonReactiveClient redissonClient = Redisson.createReactive();
+    RMapCacheReactive<Object, Object> rMapCache = redissonClient.getMapCache("test-cache");
+    RLockReactive lock = rMapCache.getLock("key1");
+````
+
+**Redis version**
+6.0
+
+**Redisson version**
+3.14.1
+
+**Redisson configuration**
+Defaults

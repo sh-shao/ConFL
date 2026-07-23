@@ -1,0 +1,48 @@
+[bug] Infinite Loop Observed for ResourceLockImpl after Zookeeper Session Expired
+
+## Observations
+
+I haven't been able to reproduce this issue, but in one of my test environments, I see this behavior often. It seems pretty clear that there is a potential for an infinite loop in the `ResourceLockImpl` class. I specifically see it taking place for the bookie's lock on its znode. Here are the observed events. The bookie's logs are below.
+
+1. The bookie starts out connected and as the owner of an ephemeral node like this `/ledgers/available/bookie-0:3181`.
+2. Then the bookie's zk session expires. (This might be due to being idle for a while since it is a test cluster.)
+3. Then, we see this log: `Metadata store session has been re-established. Revalidating all the existing locks.`. That log line is associated with revalidating locks, and given the behavior we observe, it seems to find the lock existing in Zookeeper (otherwise, we wouldn't get this loop). Here is the code that we don't see executed (we don't see that line) https://github.com/apache/pulsar/blob/12ca27fa800c72b0c9a6e7f2583a9daa2497add9/pulsar-metadata/src/main/java/org/apache/pulsar/metadata/coordination/impl/ResourceLockImpl.java#L244-L250
+4. Then the next nuance that took me a while to find is https://github.com/apache/pulsar/blob/12ca27fa800c72b0c9a6e7f2583a9daa2497add9/pulsar-metadata/src/main/java/org/apache/pulsar/metadata/coordination/impl/ResourceLockImpl.java#L267. Given that we fell through step 3, I couldn't see why we weren't getting into this block (again, we don't see that log line). It's because the `serde.deserialize` implementation for `BookieServiceInfo` deserializes all objects to `null`. (This definitely seems like a bug, and I think fixing this would fix the bug for the rack awareness case but not for the general case.) https://github.com/apache/pulsar/blob/12ca27fa800c72b0c9a6e7f2583a9daa2497add9/pulsar-metadata/src/main/java/org/apache/pulsar/metadata/bookkeeper/BookieServiceInfoSerde.java#L65-L68
+5. Then, we delete the znode because we determined that we created it, but the new value is different that the old value (see 4). Naturally, we delete the current value and then recreate it asynchronously: https://github.com/apache/pulsar/blob/12ca27fa800c72b0c9a6e7f2583a9daa2497add9/pulsar-metadata/src/main/java/org/apache/pulsar/metadata/coordination/impl/ResourceLockImpl.java#L300-L305
+6. At some point in the middle of step 5, we get a notification that the znode was deleted and that triggers the lock invalidation logic, which gets us to enter into a loop of deleting and recreating the znode.
+
+```log
+2022-07-29T19:43:33,222+0000 [main-SendThread(zookeeper-0:2181)] WARN  org.apache.zookeeper.ClientCnxn - Unable to reconnect to ZooKeeper service, session 0x1002e8eca9c0019 has expired
+2022-07-29T19:43:33,222+0000 [main-SendThread(zookeeper-0:2181)] WARN  org.apache.zookeeper.ClientCnxn - Session 0x1002e8eca9c0019 for server zookeeper-0/10.249.212.6:2181, Closing socket connection. Attempting reconnect except it is a SessionExpiredException.
+org.apache.zookeeper.ClientCnxn$SessionExpiredException: Unable to reconnect to ZooKeeper service, session 0x1002e8eca9c0019 has expired
+        at org.apache.zookeeper.ClientCnxn$SendThread.onConnected(ClientCnxn.java:1430) ~[org.apache.zookeeper-zookeeper-3.8.0.jar:3.8.0]
+        at org.apache.zookeeper.ClientCnxnSocket.readConnectResult(ClientCnxnSocket.java:154) ~[org.apache.zookeeper-zookeeper-3.8.0.jar:3.8.0]
+        at org.apache.zookeeper.ClientCnxnSocketNIO.doIO(ClientCnxnSocketNIO.java:86) ~[org.apache.zookeeper-zookeeper-3.8.0.jar:3.8.0]
+        at org.apache.zookeeper.ClientCnxnSocketNIO.doTransport(ClientCnxnSocketNIO.java:350) ~[org.apache.zookeeper-zookeeper-3.8.0.jar:3.8.0]
+        at org.apache.zookeeper.ClientCnxn$SendThread.run(ClientCnxn.java:1282) [org.apache.zookeeper-zookeeper-3.8.0.jar:3.8.0]
+2022-07-29T19:44:16,903+0000 [main-EventThread] INFO  org.apache.pulsar.metadata.impl.ZKSessionWatcher - Got ZK session watch event: WatchedEvent state:SyncConnected type:None path:null
+2022-07-29T19:44:16,904+0000 [main-EventThread] INFO  org.apache.pulsar.metadata.impl.ZKSessionWatcher - ZooKeeper client reconnection with server quorum. Current status: SessionLost
+2022-07-29T19:44:16,904+0000 [metadata-store-coordination-service-5-1] INFO  org.apache.pulsar.metadata.coordination.impl.LockManagerImpl - Metadata store connection has been re-established. Revalidating locks that were pending.
+2022-07-29T19:44:16,984+0000 [metadata-store-coordination-service-5-1] INFO  org.apache.pulsar.metadata.coordination.impl.LockManagerImpl - Metadata store session has been re-established. Revalidating all the existing locks.
+2022-07-29T19:44:17,409+0000 [metadata-store-3-1] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Lock on resource /ledgers/available/bookkeeper-0:3181 was invalidated
+2022-07-29T19:44:17,411+0000 [metadata-store-3-1] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Lock on resource /ledgers/available/bookkeeper-0:3181 was invalidated
+2022-07-29T19:44:17,476+0000 [main-EventThread] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Acquired resource lock on /ledgers/available/bookkeeper-0:3181
+2022-07-29T19:44:17,477+0000 [main-EventThread] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Successfully re-acquired lock at /ledgers/available/bookkeeper-0:3181
+2022-07-29T19:44:17,575+0000 [metadata-store-3-1] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Lock on resource /ledgers/available/bookkeeper-0:3181 was invalidated
+2022-07-29T19:44:17,576+0000 [metadata-store-3-1] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Lock on resource /ledgers/available/bookkeeper-0:3181 was invalidated
+2022-07-29T19:44:17,582+0000 [main-EventThread] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Acquired resource lock on /ledgers/available/bookkeeper-0:3181
+2022-07-29T19:44:17,582+0000 [main-EventThread] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Successfully re-acquired lock at /ledgers/available/bookkeeper-0:3181
+2022-07-29T19:44:17,582+0000 [main-EventThread] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Successfully revalidated the lock on /ledgers/available/bookkeeper-0:3181
+2022-07-29T19:44:17,592+0000 [metadata-store-3-1] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Lock on resource /ledgers/available/bookkeeper-0:3181 was invalidated
+2022-07-29T19:44:17,592+0000 [metadata-store-3-1] INFO  org.apache.pulsar.metadata.coordination.impl.ResourceLockImpl - Lock on resource /ledgers/available/bookkeeper-0:3181 was invalidated
+```
+
+## Potential solutions
+* Instead of deleting the znode, why not just use a `store.put` to replace the znode (we already confirmed that we own it). This might have bad consequences for other use cases. It's relevant to remember that this is for a generic lock class. However, given this code handling "bad version" updates, it seems like this might be the right path: https://github.com/apache/pulsar/blob/12ca27fa800c72b0c9a6e7f2583a9daa2497add9/pulsar-metadata/src/main/java/org/apache/pulsar/metadata/coordination/impl/ResourceLockImpl.java#L191-L194.
+* Try to find a way to ignore the ZK notification that the node is deleted. We could do this by adding state to the `ResourceLockImpl` that indicates the lock is being revalidated in the edge case that requires deletion and we should ignore node deleted notification.
+
+I didn't have any time to test these implementations, but after writing this issue, I think one or both of these could be the right direction.
+
+## Open questions
+* One of the details I couldn't account for was the number of updates. We see `Lock on resource /ledgers/available/bookie-0:3181 was invalidated` logged twice at a time and then later in the log (not shared here), I saw it 3 times at a time. This led me to test with ZK to see how persistent watches work, and it seems to me that we shouldn't be getting extra notifications. It could have to do with the way callbacks are handled in the `ResourceLockImpl#revalidate`.
+* Why does the bookie think the data is already in ZK (see step 3 above)? This seems to indicate that the client gave up on the connection before the server, given that the znode is ephemeral. I don't have the relevant ZK logs to validate against my specific bk logs.

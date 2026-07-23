@@ -1,0 +1,67 @@
+druid-lookups-cached-global race condition when realtime node starts
+When we spawn a new realtime node from tranquility (from storm), it takes a bit to load all the lookups (aprox 36 seconds), and during that time, the node already published the segment and queries using lookups obviously fail
+ 
+This can be seen in the log of the realtime task:
+```
+2017-04-28T08:00:25,880 ERROR [timeseries_stats_[2017-04-28T08:00:00.000Z/2017-04-28T08:00:25.000Z]] io.druid.query.ChainedExecutionQueryRunner - Exception with one of the sequences!
+java.lang.NullPointerException: Lookup [advertiser_account_manager_id] not found
+	at com.google.common.base.Preconditions.checkNotNull(Preconditions.java:253) ~[guava-16.0.1.jar:?]
+	at io.druid.query.lookup.RegisteredLookupExtractionFn.ensureDelegate(RegisteredLookupExtractionFn.java:143) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.lookup.RegisteredLookupExtractionFn.apply(RegisteredLookupExtractionFn.java:115) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.filter.InFilter$2$1.apply(InFilter.java:110) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.filter.InFilter$2$1.apply(InFilter.java:106) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.StringDimensionIndexer.makeIndexingValueMatcher(StringDimensionIndexer.java:532) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.incremental.IncrementalIndexStorageAdapter$CursorAndEntryHolderValueMatcherFactory.makeValueMatcher(IncrementalIndexStorageAdapter.java:647) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.filter.InFilter.makeMatcher(InFilter.java:88) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.filter.AndFilter.makeMatcher(AndFilter.java:75) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.incremental.IncrementalIndexStorageAdapter.makeFilterMatcher(IncrementalIndexStorageAdapter.java:558) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.incremental.IncrementalIndexStorageAdapter.access$000(IncrementalIndexStorageAdapter.java:67) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.incremental.IncrementalIndexStorageAdapter$1$1.<init>(IncrementalIndexStorageAdapter.java:243) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.incremental.IncrementalIndexStorageAdapter$1.apply(IncrementalIndexStorageAdapter.java:241) ~[druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.segment.incremental.IncrementalIndexStorageAdapter$1.apply(IncrementalIndexStorageAdapter.java:233) ~[druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.MappingAccumulator.accumulate(MappingAccumulator.java:39) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.BaseSequence.accumulate(BaseSequence.java:67) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappedSequence.accumulate(MappedSequence.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.MappedSequence.accumulate(MappedSequence.java:40) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.FilteredSequence.accumulate(FilteredSequence.java:42) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.ResourceClosingSequence.accumulate(ResourceClosingSequence.java:38) ~[java-util-0.27.10.jar:?]
+	at com.metamx.common.guava.Sequences.toList(Sequences.java:113) ~[java-util-0.27.10.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119) [druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.FutureTask.run(Unknown Source) [?:1.8.0_65]
+	at com.google.common.util.concurrent.MoreExecutors$SameThreadExecutorService.execute(MoreExecutors.java:297) [guava-16.0.1.jar:?]
+	at java.util.concurrent.AbstractExecutorService.submit(Unknown Source) [?:1.8.0_65]
+	at com.google.common.util.concurrent.AbstractListeningExecutorService.submit(AbstractListeningExecutorService.java:58) [guava-16.0.1.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1.apply(ChainedExecutionQueryRunner.java:117) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1.apply(ChainedExecutionQueryRunner.java:109) [druid-processing-0.9.2.jar:0.9.2]
+	at com.google.common.collect.Iterators$8.transform(Iterators.java:794) [guava-16.0.1.jar:?]
+	at com.google.common.collect.TransformedIterator.next(TransformedIterator.java:48) [guava-16.0.1.jar:?]
+	at com.google.common.collect.Iterators.addAll(Iterators.java:357) [guava-16.0.1.jar:?]
+	at com.google.common.collect.Lists.newArrayList(Lists.java:147) [guava-16.0.1.jar:?]
+	at com.google.common.collect.Lists.newArrayList(Lists.java:129) [guava-16.0.1.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1.make(ChainedExecutionQueryRunner.java:105) [druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.BaseSequence.accumulate(BaseSequence.java:64) [java-util-0.27.10.jar:?]
+	at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:104) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:104) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.CPUTimeMetricQueryRunner$1.accumulate(CPUTimeMetricQueryRunner.java:81) [druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.Sequences$1.accumulate(Sequences.java:90) [java-util-0.27.10.jar:?]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2$1.call(SpecificSegmentQueryRunner.java:87) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner.doNamed(SpecificSegmentQueryRunner.java:171) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner.access$400(SpecificSegmentQueryRunner.java:41) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2.doItNamed(SpecificSegmentQueryRunner.java:162) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.spec.SpecificSegmentQueryRunner$2.accumulate(SpecificSegmentQueryRunner.java:80) [druid-processing-0.9.2.jar:0.9.2]
+	at com.metamx.common.guava.Sequences.toList(Sequences.java:113) [java-util-0.27.10.jar:?]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129) [druid-processing-0.9.2.jar:0.9.2]
+	at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119) [druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.FutureTask.run(Unknown Source) [?:1.8.0_65]
+	at io.druid.query.PrioritizedListenableFutureTask.run(PrioritizedExecutorService.java:271) [druid-processing-0.9.2.jar:0.9.2]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source) [?:1.8.0_65]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source) [?:1.8.0_65]
+	at java.lang.Thread.run(Unknown Source) [?:1.8.0_65]
+```
+
+later on it loads successfully (but it's 36 seconds too late :P)
+
+```
+2017-04-28T08:00:36,210 INFO [NamespaceExtractionCacheManager-0] io.druid.server.lookup.namespace.JDBCExtractionNamespaceCacheFactory - Finished loading 1079 values for namespace[namespace-factory-JDBCExtractionNamespace = { connectorConfig = { DbConnectorConfig{createTables=false, connectURI='jdbc:mysql:/*********', user='****', passwordProvider=io.druid.metadata.DefaultPasswordProvider} }, table = adserver_sf_backoffice_user_advertiser, keyColumn = id, valueColumn = acc_manager_id, tsColumn = null, pollPeriod = PT5M}-cb7e90b1-cf67-495c-9ce7-0473aeb68c79]
+```

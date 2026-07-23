@@ -1,0 +1,93 @@
+[Bug] Deadlock in NegativeAcksTracker.close
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Read release policy
+
+- [X] I understand that unsupported versions don't get bug fixes. I will attempt to reproduce the issue on a supported version of Pulsar client and Pulsar broker.
+
+
+### Version
+
+branch-4.0 at 3112ae9
+
+
+### Minimal reproduce step
+
+This occurred in CI while running org.apache.pulsar.client.api.InterceptorsTest.testConsumerInterceptorForNegativeAcksSend
+
+### What did you expect to see?
+
+No deadlocks
+
+### What did you see instead?
+
+```
+
+Found one Java-level deadlock:
+=============================
+"TestNG-method=testConsumerInterceptorForNegativeAcksSend-1":
+  waiting to lock monitor 0x00007ff75811c860 (object 0x0000100026ab72e8, a org.apache.pulsar.client.impl.NegativeAcksTracker),
+  which is held by "pulsar-timer-4412-1"
+
+"pulsar-timer-4412-1":
+  waiting to lock monitor 0x00007ff7749f2c20 (object 0x0000100026ab6c18, a org.apache.pulsar.client.impl.ConsumerImpl),
+  which is held by "TestNG-method=testConsumerInterceptorForNegativeAcksSend-1"
+
+Java stack information for the threads listed above:
+===================================================
+"TestNG-method=testConsumerInterceptorForNegativeAcksSend-1":
+	at org.apache.pulsar.client.impl.NegativeAcksTracker.close(NegativeAcksTracker.java:148)
+	- waiting to lock <0x0000100026ab72e8> (a org.apache.pulsar.client.impl.NegativeAcksTracker)
+	at org.apache.pulsar.client.impl.ConsumerImpl.closeConsumerTasks(ConsumerImpl.java:1179)
+	at org.apache.pulsar.client.impl.ConsumerImpl.closeAsync(ConsumerImpl.java:1114)
+	- locked <0x0000100026ab6c18> (a org.apache.pulsar.client.impl.ConsumerImpl)
+	at org.apache.pulsar.client.impl.ConsumerBase.close(ConsumerBase.java:747)
+	at org.apache.pulsar.client.api.InterceptorsTest.testConsumerInterceptorForNegativeAcksSend(InterceptorsTest.java:773)
+	at java.lang.invoke.DirectMethodHandle$Holder.invokeVirtual(java.base@21.0.5/DirectMethodHandle$Holder)
+	at java.lang.invoke.LambdaForm$MH/0x00007ff7a0531c00.invoke(java.base@21.0.5/LambdaForm$MH)
+	at java.lang.invoke.Invokers$Holder.invokeExact_MT(java.base@21.0.5/Invokers$Holder)
+	at jdk.internal.reflect.DirectMethodHandleAccessor.invokeImpl(java.base@21.0.5/DirectMethodHandleAccessor.java:154)
+	at jdk.internal.reflect.DirectMethodHandleAccessor.invoke(java.base@21.0.5/DirectMethodHandleAccessor.java:103)
+	at java.lang.reflect.Method.invoke(java.base@21.0.5/Method.java:580)
+	at org.testng.internal.invokers.MethodInvocationHelper.invokeMethod(MethodInvocationHelper.java:139)
+	at org.testng.internal.invokers.InvokeMethodRunnable.runOne(InvokeMethodRunnable.java:47)
+	at org.testng.internal.invokers.InvokeMethodRunnable.call(InvokeMethodRunnable.java:76)
+	at org.testng.internal.invokers.InvokeMethodRunnable.call(InvokeMethodRunnable.java:11)
+	at java.util.concurrent.FutureTask.run(java.base@21.0.5/FutureTask.java:317)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@21.0.5/ThreadPoolExecutor.java:1144)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@21.0.5/ThreadPoolExecutor.java:642)
+	at java.lang.Thread.runWith(java.base@21.0.5/Thread.java:1596)
+	at java.lang.Thread.run(java.base@21.0.5/Thread.java:1583)
+"pulsar-timer-4412-1":
+	at org.apache.pulsar.client.impl.ConsumerImpl.redeliverUnacknowledgedMessages(ConsumerImpl.java:2076)
+	- waiting to lock <0x0000100026ab6c18> (a org.apache.pulsar.client.impl.ConsumerImpl)
+	at org.apache.pulsar.client.impl.ConsumerImpl.redeliverUnacknowledgedMessages(ConsumerImpl.java:2136)
+	at org.apache.pulsar.client.impl.NegativeAcksTracker.triggerRedelivery(NegativeAcksTracker.java:97)
+	- locked <0x0000100026ab72e8> (a org.apache.pulsar.client.impl.NegativeAcksTracker)
+	at org.apache.pulsar.client.impl.NegativeAcksTracker$$Lambda/0x00007ff7a0edaf90.run(Unknown Source)
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.run(HashedWheelTimer.java:713)
+	at io.netty.util.concurrent.ImmediateExecutor.execute(ImmediateExecutor.java:34)
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.expire(HashedWheelTimer.java:701)
+	at io.netty.util.HashedWheelTimer$HashedWheelBucket.expireTimeouts(HashedWheelTimer.java:788)
+	at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:501)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@21.0.5/Thread.java:1596)
+	at java.lang.Thread.run(java.base@21.0.5/Thread.java:1583)
+
+Found 1 deadlock.
+```
+
+Analysis:
+https://jstack.review/?https://gist.github.com/lhotari/b95fc071c1e488ba4f0a4606ae85c76a#tda_1_sync_0x0000100026ab6c18
+Thread dump: https://gist.github.com/lhotari/b95fc071c1e488ba4f0a4606ae85c76a
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

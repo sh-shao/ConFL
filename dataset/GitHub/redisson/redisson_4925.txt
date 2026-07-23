@@ -1,0 +1,62 @@
+NameMapper is called twice when acquiring a ReadWriteLock
+<!--
+Try Redisson PRO https://redisson.pro with ultra-fast performance and support by SLA.
+-->
+
+When I acquire a ReadWriteLock using a NameMapper wich injects a prefix in lock name, the prefix is being injected twice.
+It works as expected for regular locks.
+
+**Steps to reproduce or test case**
+
+```java
+var nameMapper = new NameMapper() {
+
+	@Override
+	public String map(String name) {
+		return "prefix:" + name;
+	}
+
+	@Override
+	public String unmap(String name) {
+		return name.substring(7);
+	}
+
+};
+
+var config = new Config();
+config.useSingleServer() //
+		.setNameMapper(nameMapper) //
+		.setAddress("redis://localhost:6379");
+
+var redisson = Redisson.create(config);
+
+var lock1 = redisson.getReadWriteLock("myReadWriteLock").writeLock();
+lock1.lock();
+
+var lock2 = redisson.getLock("myLock");
+lock2.lock();
+```
+
+**Expected behavior**
+
+```
+keys *
+1) "prefix:myReadWriteLock"
+2) "prefix:myLock"
+```
+
+**Actual behavior**
+
+```
+keys *
+1) "prefix:prefix:myReadWriteLock"
+2) "prefix:myLock"
+```
+
+**Redis version**
+
+6.0.16
+
+**Redisson version**
+
+3.20.0

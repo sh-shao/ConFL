@@ -1,0 +1,6 @@
+Unloadable lookups can tie up all query threads
+In 0.9.1-rc1, if the coordinator post to /druid/listen/v1 involves a lookup that can't be loaded, that will cause the request to block until the lookup load times out. After 10s the coordinator will time out this request. Later on it will issue a new one, but if the original request's thread is still active (which it totally could be), the new request's thread will just block while trying to acquire the lock held by the first request thread. Fast-forward a few minutes, and all jetty threads are blocked on lookup-related stuff and no queries can be made.
+
+Possible solutions:
+- Make /druid/listen/v1 requests nonblocking, by having them insert into a queue rather than actually do the work. The work would be done by another thread. The request thread would have to fail when the queue is full rather than block on full.
+- Or if the requests really need to be blocking, limit the number of concurrent /druid/listen/v1 requests (by failing any requests if there are more than X in flight). X = 1 seems reasonable to me.

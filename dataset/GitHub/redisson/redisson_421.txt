@@ -1,0 +1,27 @@
+orphan netty threads on connection failure
+If you try to create a RedissonClient and get a timeout error, the created netty threads aren't destroyed and you can never terminate the Java program but with a `System.exit()`. For example:
+
+``` Java
+    Config config = new Config();
+    config.useSingleServer().setConnectTimeout(2);
+    RedissonClient client = Redisson.create(config); // <-- timeout exception
+```
+
+If this code fails, then several netty threads remain in execution and they are never destroyed, because the "client" variable is the only point where you can "shutdown" those threads, but that RedissonClient instance hasn't been created (because an exception has been thrown).
+
+A possible solution is to shutdown the failed connection at `MasterSlaveConnectionManager.init()`, which is the point that all kind of connection managers run to create a connection. Surrounding:
+
+``` Java
+    initEntry(config);
+```
+
+this way:
+
+``` Java
+    try {
+        initEntry(config);
+    } catch (Exception e) {
+        try { this.group.shutdownGracefully().await(); } catch (Exception ignore) {}
+        throw e;
+    }
+```

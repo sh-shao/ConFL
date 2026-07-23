@@ -1,0 +1,86 @@
+Race condition during WAL splitting leading to corrupt recovered.edits
+There is a race condition that can happen when a regionserver aborts initialisation while splitting a WAL from another regionserver. This race leads to writing the WAL trailer for recovered edits while the writer threads are still running, thus the trailer gets interleaved with the edits corrupting the recovered edits file (and preventing the region to be assigned).
+We've seen this happening on HBase 2.4.17, but looking at the latest code it seems that the race can still happen there.
+The sequence of operations that leads to this issue:
+ * {{org.apache.hadoop.hbase.wal.WALSplitter.splitWAL}} calls {{outputSink.close()}} after adding all the entries to the buffers
+ * The output sink is {{org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink}} and its {{close}} method calls first {{finishWriterThreads}} in a try block which in turn will call {{finish}} on every thread and then join it to make sure it's done.
+ * However if the splitter thread gets interrupted because of RS aborting, the join will get interrupted and {{finishWriterThreads}} will rethrow without waiting for the writer threads to stop.
+ * This is problematic because coming back to {{org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink.close}} it will call {{closeWriters}} in a finally block (so it will execute even when the join was interrupted).
+ * {{closeWriters}} will call {{org.apache.hadoop.hbase.wal.AbstractRecoveredEditsOutputSink.closeRecoveredEditsWriter}} which will call {{close}} on {{{}editWriter.writer{}}}.
+ * When {{editWriter.writer}} is {{{}org.apache.hadoop.hbase.regionserver.wal.ProtobufLogWriter{}}}, its {{close}} method will write the trailer before closing the file.
+ * This trailer write will now go in parallel with writer threads writing entries causing corruption.
+ * If there are no other errors, {{closeWriters}} will succeed renaming all temporary files to final recovered edits, causing problems next time the region is assigned.
+
+Logs evidence supporting the above flow:
+Abort is triggered (because it failed to open the WAL due to some ongoing infra issue):
+{noformat}
+regionserver-2 regionserver 06:22:00.384 [RS_OPEN_META-regionserver/host01:16201-0] ERROR org.apache.hadoop.hbase.regionserver.HRegionServer - ***** ABORTING region server host01,16201,1709187641249: WAL can not clean up after init failed *****{noformat}
+We can see that the writer threads were still active after closing (even considering that the
+ordering in the log might not be accurate, we see that they die because the channel is closed while still writing, not because they're stopping):
+{noformat}
+regionserver-2 regionserver 06:22:09.662 [DataStreamer for file /hbase/data/default/aeris_v2/53308260a6b22eaf6ebb8353f7df3077/recovered.edits/0000000003169600719-host02%2C16201%2C1709180140645.1709186722780.temp block BP-1645452845-192.168.2.230-1615455682886:blk_1076340939_2645368] WARN  org.apache.hadoop.hdfs.DataStreamer - Error Recovery for BP-1645452845-192.168.2.230-1615455682886:blk_1076340939_2645368 in pipeline [DatanodeInfoWithStorage[192.168.2.230:15010,DS-2aa201ab-1027-47ec-b05f-b39d795fda85,DISK], DatanodeInfoWithStorage[192.168.2.232:15010,DS-39651d5a-67d2-4126-88f0-45cdee967dab,DISK], Datanode
+InfoWithStorage[192.168.2.231:15010,DS-e08a1d17-f7b1-4e39-9713-9706bd762f48,DISK]]: datanode 2(DatanodeInfoWithStorage[192.168.2.231:15010,DS-e08a1d17-f7b1-4e39-9713-9706bd762f48,DISK]) is bad.
+regionserver-2 regionserver 06:22:09.742 [split-log-closeStream-pool-1] INFO  org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink - Closed recovered edits writer path=hdfs://mycluster/hbase/data/default/aeris_v2/53308260a6b22eaf6ebb8353f7df3077/recovered.edits/0000000003169600719-host02%2C16201%
+2C1709180140645.1709186722780.temp (wrote 5949 edits, skipped 0 edits in 93 ms)
+regionserver-2 regionserver 06:22:09.743 [RS_LOG_REPLAY_OPS-regionserver/host01:16201-1-Writer-0] ERROR org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink - Failed to write log entry aeris_v2/53308260a6b22eaf6ebb8353f7df3077/3169611655=[#edits: 8 = <REDACTED>] to log
+regionserver-2 regionserver java.nio.channels.ClosedChannelException: null
+regionserver-2 regionserver    at org.apache.hadoop.hdfs.ExceptionLastSeen.throwException4Close(ExceptionLastSeen.java:73) ~[hadoop-hdfs-client-3.2.4.jar:?]
+regionserver-2 regionserver    at org.apache.hadoop.hdfs.DFSOutputStream.checkClosed(DFSOutputStream.java:153) ~[hadoop-hdfs-client-3.2.4.jar:?]
+regionserver-2 regionserver    at org.apache.hadoop.fs.FSOutputSummer.write(FSOutputSummer.java:105) ~[hadoop-common-3.2.4.jar:?]
+regionserver-2 regionserver    at org.apache.hadoop.fs.FSDataOutputStream$PositionCache.write(FSDataOutputStream.java:57) ~[hadoop-common-3.2.4.jar:?]
+regionserver-2 regionserver    at java.io.DataOutputStream.write(Unknown Source) ~[?:?]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.io.ByteBufferWriterOutputStream.write(ByteBufferWriterOutputStream.java:94) ~[hbase-common-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.KeyValue.write(KeyValue.java:2093) ~[hbase-common-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.KeyValueUtil.oswrite(KeyValueUtil.java:737) ~[hbase-common-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.wal.WALCellCodec$EnsureKvEncoder.write(WALCellCodec.java:365) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.wal.ProtobufLogWriter.append(ProtobufLogWriter.java:58) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.AbstractRecoveredEditsOutputSink$RecoveredEditsWriter.writeRegionEntries(AbstractRecoveredEditsOutputSink.java:237) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink.append(RecoveredEditsOutputSink.java:66) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink$WriterThread.writeBuffer(OutputSink.java:249) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink$WriterThread.doRun(OutputSink.java:241) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink$WriterThread.run(OutputSink.java:211) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver 06:22:09.745 [RS_LOG_REPLAY_OPS-regionserver/host01:16201-1-Writer-0] ERROR org.apache.hadoop.hbase.wal.OutputSink - Exiting thread
+regionserver-2 regionserver java.nio.channels.ClosedChannelException: null
+regionserver-2 regionserver    at org.apache.hadoop.hdfs.ExceptionLastSeen.throwException4Close(ExceptionLastSeen.java:73) ~[hadoop-hdfs-client-3.2.4.jar:?]
+regionserver-2 regionserver    at org.apache.hadoop.hdfs.DFSOutputStream.checkClosed(DFSOutputStream.java:153) ~[hadoop-hdfs-client-3.2.4.jar:?]
+regionserver-2 regionserver    at org.apache.hadoop.fs.FSOutputSummer.write(FSOutputSummer.java:105) ~[hadoop-common-3.2.4.jar:?]
+regionserver-2 regionserver    at org.apache.hadoop.fs.FSDataOutputStream$PositionCache.write(FSDataOutputStream.java:57) ~[hadoop-common-3.2.4.jar:?]
+regionserver-2 regionserver    at java.io.DataOutputStream.write(Unknown Source) ~[?:?]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.io.ByteBufferWriterOutputStream.write(ByteBufferWriterOutputStream.java:94) ~[hbase-common-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.KeyValue.write(KeyValue.java:2093) ~[hbase-common-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.KeyValueUtil.oswrite(KeyValueUtil.java:737) ~[hbase-common-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.wal.WALCellCodec$EnsureKvEncoder.write(WALCellCodec.java:365) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.wal.ProtobufLogWriter.append(ProtobufLogWriter.java:58) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.AbstractRecoveredEditsOutputSink$RecoveredEditsWriter.writeRegionEntries(AbstractRecoveredEditsOutputSink.java:237) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink.append(RecoveredEditsOutputSink.java:66) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink$WriterThread.writeBuffer(OutputSink.java:249) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink$WriterThread.doRun(OutputSink.java:241) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink$WriterThread.run(OutputSink.java:211) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver 06:22:09.749 [split-log-closeStream-pool-1] INFO  org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink - Rename recovered edits hdfs://mycluster/hbase/data/default/aeris_v2/53308260a6b22eaf6ebb8353f7df3077/recovered.edits/0000000003169600719-host02%2C16201%2C1709180140645.1709186722780.temp to hdfs://mycluster/hbase/data/default/aeris_v2/53308260a6b22eaf6ebb8353f7df3077/recovered.edits/0000000003169611654{noformat}
+And we can see the {{finishWriterThreads}} was interrupted:
+{noformat}
+regionserver-2 regionserver 06:22:20.643 [RS_LOG_REPLAY_OPS-regionserver/host01:16201-1] WARN  org.apache.hadoop.hbase.regionserver.SplitLogWorker - Resigning, interrupted splitting WAL hdfs://mycluster/hbase/WALs/host02,16201,1709180140645-splitting/host02%2C16201%2C1709180140645.1709186722780
+regionserver-2 regionserver java.io.InterruptedIOException: null
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink.finishWriterThreads(OutputSink.java:139) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.RecoveredEditsOutputSink.close(RecoveredEditsOutputSink.java:94) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.WALSplitter.splitWAL(WALSplitter.java:414) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.WALSplitter.splitLogFile(WALSplitter.java:201) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.SplitLogWorker.splitLog(SplitLogWorker.java:108) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.SplitWALCallable.call(SplitWALCallable.java:100) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.SplitWALCallable.call(SplitWALCallable.java:46) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.regionserver.handler.RSProcedureHandler.process(RSProcedureHandler.java:49) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.executor.EventHandler.run(EventHandler.java:98) [hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    at java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source) [?:?]
+regionserver-2 regionserver    at java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source) [?:?]
+regionserver-2 regionserver    at java.lang.Thread.run(Unknown Source) [?:?]
+regionserver-2 regionserver Caused by: java.lang.InterruptedException
+regionserver-2 regionserver    at java.lang.Object.wait(Native Method) ~[?:?]
+regionserver-2 regionserver    at java.lang.Thread.join(Unknown Source) ~[?:?]
+regionserver-2 regionserver    at java.lang.Thread.join(Unknown Source) ~[?:?]
+regionserver-2 regionserver    at org.apache.hadoop.hbase.wal.OutputSink.finishWriterThreads(OutputSink.java:137) ~[hbase-server-2.4.17.jar:2.4.17]
+regionserver-2 regionserver    ... 11 more{noformat}
+ 
+The corrupted recovered edits file contained one additional piece of evidence towards a race condition. The 0 bytes that form the 32 bit trailer length were scattered through the file while the marker {{LAWP}} was written in one piece. This is because in OpenJDK11
+{{writeInt}} writes each byte individually but byte arrays are written all at once.
+ 
+Original bug report from Vlad Hanciuta.

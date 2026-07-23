@@ -1,0 +1,55 @@
+Shutting down broker hangs in ModularLoadManagerImpl.disableBroker
+Tests sporadically get stuck in the broker shutdown sequence. This could also be a production code issue. 
+
+Relevant stack traces:
+
+```
+"main" #1 prio=5 os_prio=0 cpu=44417.24ms elapsed=3524.83s tid=0x00007fa768024380 nid=0xac3 waiting on condition  [0x00007fa76d57d000]
+   java.lang.Thread.State: WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@17.0.3/Native Method)
+	- parking to wait for  <0x00000000c2e54210> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.3/LockSupport.java:211)
+	at java.util.concurrent.CompletableFuture$Signaller.block(java.base@17.0.3/CompletableFuture.java:1864)
+	at java.util.concurrent.ForkJoinPool.unmanagedBlock(java.base@17.0.3/ForkJoinPool.java:3463)
+	at java.util.concurrent.ForkJoinPool.managedBlock(java.base@17.0.3/ForkJoinPool.java:3434)
+	at java.util.concurrent.CompletableFuture.waitingGet(java.base@17.0.3/CompletableFuture.java:1898)
+	at java.util.concurrent.CompletableFuture.join(java.base@17.0.3/CompletableFuture.java:2117)
+	at org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl.disableBroker(ModularLoadManagerImpl.java:621)
+	at org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerWrapper.disableBroker(ModularLoadManagerWrapper.java:47)
+	at org.apache.pulsar.broker.service.BrokerService.unloadNamespaceBundlesGracefully(BrokerService.java:896)
+	at org.apache.pulsar.broker.service.BrokerService.unloadNamespaceBundlesGracefully(BrokerService.java:887)
+	at org.apache.pulsar.broker.service.BrokerService.closeAsync(BrokerService.java:732)
+	at org.apache.pulsar.broker.PulsarService.closeAsync(PulsarService.java:452)
+	at org.apache.pulsar.broker.PulsarService.close(PulsarService.java:374)
+	at org.apache.pulsar.functions.worker.PulsarFunctionTlsTest.tearDown(PulsarFunctionTlsTest.java:182)
+```
+
+```
+"pulsar-modular-load-manager-3622-1" #6477 prio=5 os_prio=0 cpu=1.22ms elapsed=3122.86s tid=0x00007fa73c12a470 nid=0x108a0 waiting on condition  [0x00007fa6fba45000]
+   java.lang.Thread.State: WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@17.0.3/Native Method)
+	- parking to wait for  <0x00000000c2e558f8> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.park(java.base@17.0.3/LockSupport.java:211)
+	at java.util.concurrent.CompletableFuture$Signaller.block(java.base@17.0.3/CompletableFuture.java:1864)
+	at java.util.concurrent.ForkJoinPool.unmanagedBlock(java.base@17.0.3/ForkJoinPool.java:3463)
+	at java.util.concurrent.ForkJoinPool.managedBlock(java.base@17.0.3/ForkJoinPool.java:3434)
+	at java.util.concurrent.CompletableFuture.waitingGet(java.base@17.0.3/CompletableFuture.java:1898)
+	at java.util.concurrent.CompletableFuture.get(java.base@17.0.3/CompletableFuture.java:2072)
+	at org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl.updateAllBrokerData(ModularLoadManagerImpl.java:506)
+	at org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl.updateAll(ModularLoadManagerImpl.java:480)
+	at org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl$$Lambda$611/0x00000008012f8d00.run(Unknown Source)
+	at java.util.concurrent.Executors$RunnableAdapter.call(java.base@17.0.3/Executors.java:539)
+	at java.util.concurrent.FutureTask.run(java.base@17.0.3/FutureTask.java:264)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(java.base@17.0.3/ScheduledThreadPoolExecutor.java:304)
+```
+
+Full thread dump in [jstack.review](https://jstack.review/?https://gist.github.com/lhotari/ec2144c43ecbc12ac698e99657877886#tda_1_tg_28)
+
+
+This seems to be related to a race condition in the shutdown sequence.
+
+https://github.com/apache/pulsar/blob/e268d0021842918579388e579cea83f6d550f8c6/pulsar-broker/src/main/java/org/apache/pulsar/broker/PulsarService.java#L443-L463
+
+In #10365 was moved to run the load manager stop before the broker service close. This seems to cause issues in broker shutdown when unloadNamespaceBundlesGracefully calls load manager's disableBroker method: 
+https://github.com/apache/pulsar/blob/5db06a1f5a6ca776365825e4b32c8244914cc29a/pulsar-broker/src/main/java/org/apache/pulsar/broker/service/BrokerService.java#L890-L901
+

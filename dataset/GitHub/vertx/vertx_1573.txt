@@ -1,0 +1,33 @@
+Blocked thread warning when opening or closing an AsyncFile 
+Users have reported blocked thread warning when opening or closing an AsyncFile.
+
+Here are example stack traces:
+
+```
+io.vertx.core.VertxException: Thread blocked
+        at java.io.UnixFileSystem.getBooleanAttributes0(Native Method)
+        at java.io.UnixFileSystem.getBooleanAttributes(UnixFileSystem.java:242)
+        at java.io.File.exists(File.java:819)
+        at io.vertx.core.impl.FileResolver.resolveFile(FileResolver.java:103)
+        at io.vertx.core.impl.VertxImpl.resolveFile(VertxImpl.java:657)
+        at io.vertx.core.file.impl.FileSystemImpl$14.<init>(FileSystemImpl.java:736)
+        at io.vertx.core.file.impl.FileSystemImpl.openInternal(FileSystemImpl.java:735)
+        at io.vertx.core.file.impl.FileSystemImpl.open(FileSystemImpl.java:299)
+        at io.vertx.core.http.impl.HttpServerFileUploadImpl.streamToFileSystem(HttpServerFileUploadImpl.java:148)
+```
+
+and
+
+```
+io.vertx.core.VertxException: Thread blocked
+    at sun.nio.ch.WindowsAsynchronousFileChannelImpl.close0(Native Method)
+    at sun.nio.ch.WindowsAsynchronousFileChannelImpl.close(WindowsAsynchronousFileChannelImpl.java:142)
+    at io.vertx.core.file.impl.AsyncFileImpl.doClose(AsyncFileImpl.java:464)
+    at io.vertx.core.file.impl.AsyncFileImpl.closeInternal(AsyncFileImpl.java:480)
+    at io.vertx.core.file.impl.AsyncFileImpl.close(AsyncFileImpl.java:117)
+    at io.vertx.rxjava.core.file.AsyncFile.close(AsyncFile.java:143)
+```
+
+One user provided more details and reported he was using a mapped Windows shared drive.
+
+I have been able to reproduce the opening issue by a slow network filesystem (with twickle and nbd).

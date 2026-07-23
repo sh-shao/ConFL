@@ -1,0 +1,39 @@
+Possible Deadlock/Thead starvation between Hive loadPartitionByName and getTable
+We've seen an issue a couple times now where the Presto coordinator continues to queue queries, but none get executed, I believe I've traced it back to a race condition that can cause a deadlock.
+
+In a thread dump of the coordinator we saw that all 40 of our Hive Metastore refresh threads were waiting on a `getTable` call from within the `loadPartitionByName` method:
+```
+hive-metastore-hive-15188" #2599434 daemon prio=5 os_prio=0 cpu=2.14ms elapsed=8545.48s tid=0x00007fb098048000 nid=0x27b55f waiting on condition  [0x00007fb06c40d000]
+   java.lang.Thread.State: WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@11.0.6/Native Method)
+	- parking to wait for  <0x00007fb9d2a1e350> (a com.google.common.util.concurrent.SettableFuture)
+	at java.util.concurrent.locks.LockSupport.park(java.base@11.0.6/LockSupport.java:194)
+	at com.google.common.util.concurrent.AbstractFuture.get(AbstractFuture.java:502)
+	at com.google.common.util.concurrent.AbstractFuture$TrustedFuture.get(AbstractFuture.java:83)
+	at com.google.common.util.concurrent.Uninterruptibles.getUninterruptibly(Uninterruptibles.java:196)
+	at com.google.common.cache.LocalCache$LoadingValueReference.waitForValue(LocalCache.java:3581)
+	at com.google.common.cache.LocalCache$Segment.waitForLoadingValue(LocalCache.java:2174)
+	at com.google.common.cache.LocalCache$Segment.get(LocalCache.java:2038)
+	at com.google.common.cache.LocalCache.get(LocalCache.java:3952)
+	at com.google.common.cache.LocalCache.getOrLoad(LocalCache.java:3974)
+	at com.google.common.cache.LocalCache$LocalLoadingCache.get(LocalCache.java:4958)
+	at com.google.common.cache.LocalCache$LocalLoadingCache.getUnchecked(LocalCache.java:4964)
+	at io.prestosql.plugin.hive.metastore.cache.CachingHiveMetastore.get(CachingHiveMetastore.java:244)
+	at io.prestosql.plugin.hive.metastore.cache.CachingHiveMetastore.getTable(CachingHiveMetastore.java:296)
+	at io.prestosql.plugin.hive.metastore.cache.CachingHiveMetastore.loadPartitionByName(CachingHiveMetastore.java:668)
+	at io.prestosql.plugin.hive.metastore.cache.CachingHiveMetastore.access$200(CachingHiveMetastore.java:89)
+	at io.prestosql.plugin.hive.metastore.cache.CachingHiveMetastore$2.load(CachingHiveMetastore.java:201)
+	at io.prestosql.plugin.hive.metastore.cache.CachingHiveMetastore$2.load(CachingHiveMetastore.java:197)
+	at com.google.common.cache.CacheLoader.reload(CacheLoader.java:100)
+	at com.google.common.cache.CacheLoader$1$1.call(CacheLoader.java:198)
+	at java.util.concurrent.FutureTask.run(java.base@11.0.6/FutureTask.java:264)
+	at io.airlift.concurrent.BoundedExecutor.drainQueue(BoundedExecutor.java:78)
+	at io.airlift.concurrent.BoundedExecutor$$Lambda$5170/0x00007fb31459cc40.run(Unknown Source)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(java.base@11.0.6/ThreadPoolExecutor.java:1128)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(java.base@11.0.6/ThreadPoolExecutor.java:628)
+	at java.lang.Thread.run(java.base@11.0.6/Thread.java:834)
+```
+
+I believe the issue is that all the executors in the thread pool are being used, leaving no open executors to complete the `loadTable` call needed to fulfill `getTable`.
+
+This behaviour seems to have been introduced by https://github.com/prestosql/presto/pull/1921  When `loadPartitionByName` was switched from using `delete` directly to calling `getTable`

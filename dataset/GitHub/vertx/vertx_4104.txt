@@ -1,0 +1,123 @@
+WorkerExecutor.executeBlocking sometimes holds a lock on the WorkerExecutor after the blocking call has completed
+
+### Version
+
+4.1.0-Beta1
+
+### Context
+
+I ran into a Java deadlock in a large application, and based on the stack trace of the blocked threads, it seems to be caused by each thread running `WorkerExecutor.executeBlocking` on the same two `WorkerExecutor` instances, but in a different order. One thread looked like this:
+
+```
+ "vert.x-eventloop-thread-0":
+         at io.vertx.core.impl.WorkerExecutorImpl.executeBlocking(WorkerExecutorImpl.java:69)
+         - waiting to lock <0x00000000d60dd340> (a io.vertx.core.impl.WorkerExecutorImpl)
+         at io.vertx.reactivex.core.WorkerExecutor.executeBlocking(WorkerExecutor.java:118)
+         at io.vertx.reactivex.core.WorkerExecutor.lambda$rxExecuteBlocking$2(WorkerExecutor.java:166)
+         at io.vertx.reactivex.core.WorkerExecutor$$Lambda$1166/0x0000000840a2b440.accept(Unknown Source)
+         at io.vertx.reactivex.impl.AsyncResultMaybe.subscribeActual(AsyncResultMaybe.java:44)
+         at io.reactivex.Maybe.subscribe(Maybe.java:4174)
+         at io.reactivex.internal.operators.maybe.MaybeFlatten$FlatMapMaybeObserver$InnerObserver.onComplete(MaybeFlatten.java:129)
+...
+         at io.reactivex.internal.operators.maybe.MaybeFilter$FilterMaybeObserver.onComplete(MaybeFilter.java:102)
+         at io.vertx.reactivex.impl.AsyncResultMaybe.lambda$subscribeActual$0(AsyncResultMaybe.java:52)
+         at io.vertx.reactivex.impl.AsyncResultMaybe$$Lambda$325/0x0000000840303840.handle(Unknown Source)
+         at io.vertx.core.impl.future.FutureImpl$3.onSuccess(FutureImpl.java:124)
+         at io.vertx.core.impl.future.FutureBase.emitSuccess(FutureBase.java:62)
+         at io.vertx.core.impl.future.FutureImpl.addListener(FutureImpl.java:164)
+         at io.vertx.core.impl.future.PromiseImpl.addListener(PromiseImpl.java:23)
+         at io.vertx.core.impl.future.FutureImpl.onComplete(FutureImpl.java:132)
+         at io.vertx.core.impl.future.PromiseImpl.onComplete(PromiseImpl.java:23)
+         at io.vertx.core.impl.WorkerExecutorImpl.executeBlocking(WorkerExecutorImpl.java:71)
+         - locked <0x00000000d8e22a10> (a io.vertx.core.impl.WorkerExecutorImpl)
+         at io.vertx.reactivex.core.WorkerExecutor.executeBlocking(WorkerExecutor.java:118)
+         at io.vertx.reactivex.core.WorkerExecutor.lambda$rxExecuteBlocking$2(WorkerExecutor.java:166)
+         at io.vertx.reactivex.core.WorkerExecutor$$Lambda$1166/0x0000000840a2b440.accept(Unknown Source)
+         at io.vertx.reactivex.impl.AsyncResultMaybe.subscribeActual(AsyncResultMaybe.java:44)
+```
+
+And the other like this:
+```
+"vert.x-eventloop-thread-2":
+         at io.vertx.core.impl.WorkerExecutorImpl.executeBlocking(WorkerExecutorImpl.java:69)
+         - waiting to lock <0x00000000d8e22a10> (a io.vertx.core.impl.WorkerExecutorImpl)
+         at io.vertx.reactivex.ContextScheduler$ContextWorker$TimedAction.execute(ContextScheduler.java:161)
+         at io.vertx.reactivex.ContextScheduler$ContextWorker$TimedAction.schedule(ContextScheduler.java:155)
+         - locked <0x00000000d9a520b8> (a io.vertx.reactivex.ContextScheduler$ContextWorker$TimedAction)
+         at io.vertx.reactivex.ContextScheduler$ContextWorker$TimedAction.access$100(ContextScheduler.java:135)
+         at io.vertx.reactivex.ContextScheduler$ContextWorker.schedule(ContextScheduler.java:109)
+         at io.vertx.reactivex.ContextScheduler$ContextWorker.schedule(ContextScheduler.java:100)
+         at io.reactivex.internal.operators.flowable.FlowableSubscribeOn.subscribeActual(FlowableSubscribeOn.java:48)
+...
+         at io.reactivex.internal.operators.maybe.MaybeFilter$FilterMaybeObserver.onSuccess(MaybeFilter.java:89)
+         at io.vertx.reactivex.impl.AsyncResultMaybe.lambda$subscribeActual$0(AsyncResultMaybe.java:50)
+         at io.vertx.reactivex.impl.AsyncResultMaybe$$Lambda$325/0x0000000840303840.handle(Unknown Source)
+         at io.vertx.core.impl.future.FutureImpl$3.onSuccess(FutureImpl.java:124)
+         at io.vertx.core.impl.future.FutureBase.emitSuccess(FutureBase.java:62)
+         at io.vertx.core.impl.future.FutureImpl.addListener(FutureImpl.java:164)
+         at io.vertx.core.impl.future.PromiseImpl.addListener(PromiseImpl.java:23)
+         at io.vertx.core.impl.future.FutureImpl.onComplete(FutureImpl.java:132)
+         at io.vertx.core.impl.future.PromiseImpl.onComplete(PromiseImpl.java:23)
+         at io.vertx.core.impl.WorkerExecutorImpl.executeBlocking(WorkerExecutorImpl.java:71)
+         - locked <0x00000000d60dd340> (a io.vertx.core.impl.WorkerExecutorImpl)
+         at io.vertx.reactivex.core.WorkerExecutor.executeBlocking(WorkerExecutor.java:118)
+         at io.vertx.reactivex.core.WorkerExecutor.lambda$rxExecuteBlocking$2(WorkerExecutor.java:166)
+         at io.vertx.reactivex.core.WorkerExecutor$$Lambda$1166/0x0000000840a2b440.accept(Unknown Source)
+         at io.vertx.reactivex.impl.AsyncResultMaybe.subscribeActual(AsyncResultMaybe.java:44)
+```
+
+`WorkerExecutorImpl.executeBlocking` looks like this:
+``` java
+  public synchronized <T> void executeBlocking(Handler<Promise<T>> blockingCodeHandler, boolean ordered, Handler<AsyncResult<T>> asyncResultHandler) {
+    Future<T> fut = executeBlocking(blockingCodeHandler, ordered);
+    if (asyncResultHandler != null) {
+      fut.onComplete(asyncResultHandler);
+    }
+  }
+```
+If that `fut.onComplete` call runs after the blockingCodeHandler has finished, the `asyncResultHandler` will be executed right away on the current thread. This means that we stay inside of the `synchronized` block as we continue on. If one thread does
+`we1.executeBlocking(...)` followed by `we2.executeBlocking(...)`, and another thread does it in the reverse order, and the first call each thread makes ends up running `asyncResultHandler` right away, you deadlock.
+
+### Do you have a reproducer?
+
+Here is a simple JUnit test that reproduces it:
+``` java
+  public static class TestV extends AbstractVerticle {
+    private final CyclicBarrier b;
+    private final WorkerExecutor we1;
+    private final WorkerExecutor we2;
+
+    public TestV(WorkerExecutor we1, WorkerExecutor we2, CyclicBarrier b) {
+      this.we1 = we1;
+      this.we2 = we2;
+      this.b = b;
+    }
+
+    @Override
+    public void start(Promise<Void> p) throws BrokenBarrierException, InterruptedException {
+      b.await();
+      we1.executeBlocking(a -> a.complete("a"), false, ign -> 
+          we2.executeBlocking(a -> a.complete("a"), false, ign2 -> p.complete())
+      );
+    }
+  }
+
+  @Test
+  public void test(TestContext context) {
+    var async = context.strictAsync(2);
+    CyclicBarrier b = new CyclicBarrier(2);
+    var we1 = vertx.createSharedWorkerExecutor("test1");
+    var we2 = vertx.createSharedWorkerExecutor("test2");
+    vertx.deployVerticle(new TestV(we1, we2, b), ign -> async.countDown());
+    vertx.deployVerticle(new TestV(we2, we1, b), ign -> async.countDown());
+  }
+```
+Note that you also need to add a breakpoint on this line in `WorkerExecuteImpl.executeBlocking`, to ensure that the `blockingCodeHandler` always finishes before `fut.onComplete` runs:
+```
+    if (asyncResultHandler != null) {
+```
+I used the Intellij "Evaluate and log" breakpoint option to insert a 200ms sleep on this line, which lead to consistent reproductions when executing the above test.
+
+### Steps to reproduce
+
+I suspect this is hard to reliably reproduce outside of a carefully constructed test, because the timing requirements are so specific.

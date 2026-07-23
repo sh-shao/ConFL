@@ -1,0 +1,2 @@
+HTTP/2 client connection handling might leak when receiving an immediate GO_AWAY frame
+The handling of a pooled HTTP/2 client connection might race and leak a connection when the server sends immediately a GO_AWAY frame. The client pool integration might set the eviction handler after the connection has been evicted when the connect action is done outside of the event-loop thread.

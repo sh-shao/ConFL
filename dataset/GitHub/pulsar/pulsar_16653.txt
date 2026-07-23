@@ -1,0 +1,62 @@
+ReconsumeLater will hang up if retryLetterProducer create fail
+**Describe the bug**
+A clear and concise description of what the bug is.
+
+ReconsumeLater will hang up if retryLetterProducer create fail
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. create a consumer with retry policy
+2.  invoke ReconsumeLater method in messagelistener
+3. make this fail `                        this.retryLetterProducer = this.client.newProducer(this.schema).topic(this.deadLetterPolicy.getRetryLetterTopic()).enableBatching(false).blockIfQueueFull(false).create();  this will occurs because of permission or other reason
+`
+4. you will see 
+
+```
+"pulsar-external-listener-3-1" #30 prio=5 os_prio=31 tid=0x00000001532b4800 nid=0x9803 waiting on condition [0x00000002820ba000]
+   java.lang.Thread.State: WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x000000071aaae9d8> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+	at java.util.concurrent.CompletableFuture$Signaller.block(CompletableFuture.java:1707)
+	at java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3323)
+	at java.util.concurrent.CompletableFuture.waitingGet(CompletableFuture.java:1742)
+	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:1908)
+	at org.apache.pulsar.client.impl.ConsumerBase.reconsumeLater(ConsumerBase.java:334)
+	at org.example.SimpleConsumer$1.received(SimpleConsumer.java:57)
+	at org.apache.pulsar.client.impl.ConsumerBase.callMessageListener(ConsumerBase.java:898)
+	at org.apache.pulsar.client.impl.ConsumerBase.lambda$triggerListener$7(ConsumerBase.java:877)
+	at org.apache.pulsar.client.impl.ConsumerBase$$Lambda$138/24784720.run(Unknown Source)
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+	at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$201(ScheduledThreadPoolExecutor.java:180)
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:293)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	at org.apache.pulsar.shade.io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:750)
+```
+
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+fail fast 
+
+the reason is             
+```
+CompletableFuture<Void> result = new CompletableFuture();
+```
+only log an exception will make result won't complete.
+
+we need to complete the future
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+
+**Additional context**
+Add any other context about the problem here.
+
+master branch

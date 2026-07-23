@@ -1,0 +1,78 @@
+Non thread-safe initialization in RedissonObjectBuilder 
+<!--
+Please consider to take commercial 24x7 support included in PRO version https://redisson.pro
+-->
+
+### Expected behavior
+Spring bean created successfully
+
+
+### Actual behavior
+```
+Caused by: java.lang.NullPointerException: null
+    at org.redisson.liveobject.core.RedissonObjectBuilder.fillCodecMethods(RedissonObjectBuilder.java:192)
+    at org.redisson.liveobject.core.RedissonObjectBuilder.<init>(RedissonObjectBuilder.java:108)
+    at org.redisson.command.CommandAsyncService.enableRedissonReferenceSupport(CommandAsyncService.java:155)
+    at org.redisson.command.CommandAsyncService.enableRedissonReferenceSupport(CommandAsyncService.java:124)
+    at org.redisson.Redisson.enableRedissonReferenceSupport(Redisson.java:701)
+    at org.redisson.Redisson.create(Redisson.java:166)
+    at com.canva.embed.server.RpcLauncherConfiguration.embedRedisClient(RpcLauncherConfiguration.java:192)
+    at com.canva.embed.server.RpcLauncherConfiguration$$EnhancerBySpringCGLIB$$7265447b.CGLIB$embedRedisClient$5(<generated>)
+    at com.canva.embed.server.RpcLauncherConfiguration$$EnhancerBySpringCGLIB$$7265447b$$FastClassBySpringCGLIB$$851420f7.invoke(<generated>)
+    at org.springframework.cglib.proxy.MethodProxy.invokeSuper(MethodProxy.java:244)
+    at org.springframework.context.annotation.ConfigurationClassEnhancer$BeanMethodInterceptor.intercept(ConfigurationClassEnhancer.java:363)
+    at com.canva.embed.server.RpcLauncherConfiguration$$EnhancerBySpringCGLIB$$7265447b.embedRedisClient(<generated>)
+    at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+    at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+    at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+    at java.base/java.lang.reflect.Method.invoke(Method.java:564)
+    at org.springframework.beans.factory.support.SimpleInstantiationStrategy.instantiate(SimpleInstantiationStrategy.java:154)
+```
+
+
+### Steps to reproduce or test case
+We have several spring beans that initialise in prallel
+
+### Redis version
+?
+
+### Redisson version
+3.10.1
+
+### Redisson configuration
+```
+@Bean
+  RedissonClient embedRedisClient( //
+      @Value("${embed.cache.nodes}") String nodes, //
+      @Value("${embed.cache.connections}") int connections, //
+      @Value("${embed.cache.command.retry.attempts}") int retryAttempts, //
+      @Value("${embed.cache.command.retry.interval.ms}") int retryInterval, //
+      @Value("${embed.cache.command.server.timeout.ms}") int timeout
+  ) {
+    String[] splitNodes = nodes.split("\\s*,\\s*");
+    Preconditions.checkArgument(splitNodes.length > 0);
+
+    int maxConnections = connections * 2;
+
+    Config config = new Config();
+    if (splitNodes.length == 1) {
+      config.useSingleServer()
+          .setAddress(splitNodes[0])
+          .setConnectionPoolSize(connections)
+          .setRetryAttempts(retryAttempts)
+          .setRetryInterval(retryInterval)
+          .setTimeout(timeout);
+    } else {
+      config.useReplicatedServers() //
+          .addNodeAddress(splitNodes)
+          .setMasterConnectionMinimumIdleSize(connections)
+          .setMasterConnectionPoolSize(maxConnections)
+          .setSlaveConnectionMinimumIdleSize(connections)
+          .setSlaveConnectionPoolSize(maxConnections)
+          .setRetryAttempts(retryAttempts)
+          .setRetryInterval(retryInterval)
+          .setTimeout(timeout);
+    }
+    return Redisson.create(config);
+  }
+```

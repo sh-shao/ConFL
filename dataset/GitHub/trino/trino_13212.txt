@@ -1,0 +1,2 @@
+Lock congestion in DirectExchangeClient
+`io.trino.operator.DirectExchangeClient#addPages` and `io.trino.operator.DirectExchangeClient#pollPage` can cause significant lock congestion. This is most likely caused by https://github.com/trinodb/trino/commit/5832a5953235180ef235be836996d20ff2acf0d3 which moved `setBytes` to critical section.

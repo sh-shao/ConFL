@@ -1,0 +1,22 @@
+migrating thread deframer breaks weighted_round_robin_test_cpp_java
+importing MigratingThreadDeframer(#5820), we discovered that some OkHttp users have a race with following stack trace. 
+
+```
+java.lang.IllegalStateException: Headers should be received prior to messages.
+at com.google.common.base.Preconditions.checkState(Preconditions.java:511)
+at io.grpc.internal.RetriableStream$Sublistener.messagesAvailable(RetriableStream.java:952)
+at io.grpc.internal.DelayedStream$DelayedStreamListener$1.run(DelayedStream.java:438)
+at io.grpc.internal.DelayedStream$DelayedStreamListener.drainPendingCallbacks(DelayedStream.java:510)
+at io.grpc.internal.DelayedStream.drainPendingCalls(DelayedStream.java:168)
+at io.grpc.internal.DelayedStream.setStream(DelayedStream.java:132)
+at io.grpc.internal.DelayedClientTransport$PendingStream.createRealStream(DelayedClientTransport.java:358)
+at io.grpc.internal.DelayedClientTransport$PendingStream.access$300(DelayedClientTransport.java:341)
+at io.grpc.internal.DelayedClientTransport$5.run(DelayedClientTransport.java:300)
+at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1113)
+at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:588)
+at java.lang.Thread.run(Thread.java:818)
+```
+
+MigratingThreadDeframer is disabled in OkHttp via #7167. We believe the disabled code pass improved the performance.
+
+cc @ejona86 

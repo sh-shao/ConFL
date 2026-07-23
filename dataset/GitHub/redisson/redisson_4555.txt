@@ -1,0 +1,33 @@
+Redisson is not able to recover from elasticache cluster mode node type change (emulating cluster failure/maintenance)
+**Expected behavior**
+Redisson should auto-discover new nodes as topology changes and resume normal operation once all nodes are alive
+**Actual behavior**
+Redisson throws errors and is unable to recover without JVM restart:
+`...
+caused by: org.redisson.client.RedisTimeoutException: Unable to acquire subscription lock after 39000ms. Try to increase 'timeout', 'subscriptionsPerConnection', 'subscriptionConnectionPoolSize' parameters.
+	at org.redisson.pubsub.PublishSubscribeService.lambda$timeout$7(PublishSubscribeService.java:241) ~[redisson-3.17.6.jar:3.17.6]
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.run(HashedWheelTimer.java:715) ~[netty-common-4.1.79.Final.jar:4.1.79.Final]
+	at io.netty.util.concurrent.ImmediateExecutor.execute(ImmediateExecutor.java:34) ~[netty-common-4.1.79.Final.jar:4.1.79.Final]
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.expire(HashedWheelTimer.java:703) ~[netty-common-4.1.79.Final.jar:4.1.79.Final]
+	at io.netty.util.HashedWheelTimer$HashedWheelBucket.expireTimeouts(HashedWheelTimer.java:790) ~[netty-common-4.1.79.Final.jar:4.1.79.Final]
+	at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:503) ~[netty-common-4.1.79.Final.jar:4.1.79.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) ~[netty-common-4.1.79.Final.jar:4.1.79.Final]
+	... 1 more`
+
+**Steps to reproduce or test case**
+1. Connect to elasticache redis with cluster mode enabled (my use case utilizes RLocks as well as RLocalCachedMaps)
+2. Modify the cluster node type for example cache.t3.small -> cache.t3.medium (to simulate cluster failure, full topology change)
+
+**Redis version**
+6.2.6
+**Redisson version**
+3.17.6
+
+**Redisson configuration**
+`        ClusterServersConfig clusterServers = config.useClusterServers()
+                .setRetryInterval(3000)
+                .setTimeout(30000)
+                .setReadMode(ReadMode.MASTER_SLAVE)
+`
+Utilizing a "rediss://" connection string which points to the elasticache configuration endpoint provided by AWS, with TLS enabled
+Remaining config values are defaults

@@ -1,0 +1,15 @@
+Race condition in concurrent schema deletion
+**Describe the bug**
+In some scenarios, we deleted topics concurrently, which may trigger some race condition in deleting the same topic schema. For example, in `org.apache.pulsar.broker.service.AbstractTopic#deleteSchema` we will firstly perform `schemaRegistryService#getSchema`(read from bookkeeper) then `schemaRegistryService#deleteSchemaStorage`(delete its corresponding ledgers in bookkeeper). Therefore, when we delete a schema concurrently in two threads, it may happen that one thread has already deleted the ledger, and the other thread has just started executing and throws a "no such ledger" exception.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. start a cluster with at least two brokers
+2. create a partitioned topic 'A' with multiple partitions
+3. concurrently delete the non-partitioned topics within topic 'A' with the schema
+4. then you will sporadically see 'No such ledger exists on Bookies' or 'NoNode for /schemas/XX/YY/ZZ' (Note that this phenomenon does not happen every time)
+
+**Expected behavior**
+Broker service can handle these scenarios correctly.
+
+

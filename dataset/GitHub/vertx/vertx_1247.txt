@@ -1,0 +1,45 @@
+Deadlock if the connection is still being used while HttpClient is closing
+This happens in Vert.x 3.2. In thread 5717, we hold the lock on HttpClientImpl.close (lock #1) and then we try to acquire a lock on ClientConnection.close (lock #2). In thread 7035, we hold a lock #2 in ClientConnection.handleClosed and try to hold a lock #1 at HttpClientImpl.checkClosed. And boom, we get a deadlock. 
+
+I don't have a good repro now since it's quite hard to reproduce consistently. But I can demonstrate from the stack trace:
+
+```
+Thread 5717: (state = BLOCKED)
+ - io.vertx.core.http.impl.ClientConnection.close() @bci=0, line=352 (Interpreted frame)
+ - io.vertx.core.http.impl.HttpClientImpl.close() @bci=46, line=642 (Interpreted frame)
+
+Thread 7035: (state = BLOCKED)
+ - io.vertx.core.http.impl.HttpClientImpl.checkClosed() @bci=0, line=791 (Interpreted frame)
+ - io.vertx.core.http.impl.HttpClientImpl.doRequest(io.vertx.core.http.HttpMethod, java.lang.String, int, java.lang.String, io.vertx.core.MultiMap) @bci=23, line=782 (Interpreted frame)
+ - io.vertx.core.http.impl.HttpClientImpl.request(io.vertx.core.http.HttpMethod, int, java.lang.String, java.lang.String) @bci=7, line=338 (Interpreted frame)
+ - io.vertx.core.http.impl.HttpClientImpl.get(int, java.lang.String, java.lang.String) @bci=7, line=348 (Interpreted frame)
+          . 
+          .
+          .
+ - io.vertx.core.http.impl.HttpClientRequestImpl.lambda$exceptionHandler$78(io.vertx.core.Handler, java.lang.Throwable) @bci=6, line=262 (Interpreted frame)
+ - io.vertx.core.http.impl.HttpClientRequestImpl$$Lambda$21.handle(java.lang.Object) @bci=12 (Interpreted frame)
+ - io.vertx.core.http.impl.HttpClientRequestImpl.handleException(java.lang.Throwable) @bci=21, line=384 (Interpreted frame)
+ - io.vertx.core.http.impl.ClientConnection.handleClosed() @bci=59, line=307 (Interpreted frame)
+ - io.vertx.core.net.impl.VertxHandler$$Lambda$43.run() @bci=4 (Interpreted frame)
+ - io.vertx.core.impl.ContextImpl.lambda$wrapTask$16(boolean, io.vertx.core.impl.ContextTask, io.vertx.core.Handler) @bci=167, line=333 (Compiled frame)
+ - io.vertx.core.impl.ContextImpl$$Lambda$15.run() @bci=16 (Compiled frame)
+ - io.vertx.core.impl.ContextImpl.executeFromIO(io.vertx.core.impl.ContextTask) @bci=17, line=225 (Compiled frame)
+ - io.vertx.core.net.impl.VertxHandler.channelInactive(io.netty.channel.ChannelHandlerContext) @bci=37, line=99 (Interpreted frame)
+ - io.netty.channel.AbstractChannelHandlerContext.invokeChannelInactive() @bci=8, line=218 (Interpreted frame)
+ - io.netty.channel.AbstractChannelHandlerContext.fireChannelInactive() @bci=20, line=204 (Interpreted frame)
+ - io.netty.channel.ChannelInboundHandlerAdapter.channelInactive(io.netty.channel.ChannelHandlerContext) @bci=1, line=75 (Interpreted frame)
+ - io.netty.handler.timeout.IdleStateHandler.channelInactive(io.netty.channel.ChannelHandlerContext) @bci=6, line=257 (Interpreted frame)
+ - io.netty.channel.AbstractChannelHandlerContext.invokeChannelInactive() @bci=8, line=218 (Interpreted frame)
+ - io.netty.channel.AbstractChannelHandlerContext.fireChannelInactive() @bci=20, line=204 (Interpreted frame)
+ - io.netty.handler.codec.ByteToMessageDecoder.channelInactive(io.netty.channel.ChannelHandlerContext) @bci=86, line=332 (Interpreted frame)
+ - io.netty.handler.codec.http.HttpClientCodec$Decoder.channelInactive(io.netty.channel.ChannelHandlerContext) @bci=2, line=212 (Interpreted frame)
+ - io.netty.channel.CombinedChannelDuplexHandler.channelInactive(io.netty.channel.ChannelHandlerContext) @bci=5, line=132 (Interpreted frame)
+ - io.netty.channel.AbstractChannelHandlerContext.invokeChannelInactive() @bci=8, line=218 (Interpreted frame)
+ - io.netty.channel.AbstractChannelHandlerContext.fireChannelInactive() @bci=20, line=204 (Interpreted frame)
+ - io.netty.channel.DefaultChannelPipeline.fireChannelInactive() @bci=4, line=828 (Interpreted frame)
+ - io.netty.channel.AbstractChannel$AbstractUnsafe$7.run() @bci=10, line=625 (Interpreted frame)
+ - io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(long) @bci=26, line=358 (Compiled frame)
+ - io.netty.channel.nio.NioEventLoop.run() @bci=106, line=357 (Compiled frame)
+ - io.netty.util.concurrent.SingleThreadEventExecutor$2.run() @bci=13, line=112 (Compiled frame)
+ - java.lang.Thread.run() @bci=11, line=745 (Compiled frame)
+```

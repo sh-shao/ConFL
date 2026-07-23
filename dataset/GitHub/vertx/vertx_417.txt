@@ -1,0 +1,16 @@
+Jython Verticle Deployment / Undeployment : Not a worker thread + memory leak
+Starting from 1.3.0 final (1.2.3 is ok) :
+
+1) In Jython, when deploying / undeploying at least 5 verticles (worker or not) 3
+or more times in a row (waiting for them to be deployed / undeployed),
+I get a "Not a worker thread" from checkWorkerThread called in
+doDeployVerticle.
+The thread name is MainThread, although doDeployVerticle is called in
+BlockingAction... Even with empty deployed verticles, I get this bug.
+
+2) PythonInterpreter's method execfile in JythonVerticle.java is
+leaking as hell, causing OutOfMemory for PermGen space when
+deploying / undeploying. Undeploying does not free anything, even with
+a simple import vertx or whatever in the worker script. 
+
+See https://groups.google.com/forum/?fromgroups=&hl=fr#!topic/vertx/A4RlAGRGRl4

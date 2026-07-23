@@ -1,0 +1,43 @@
+RLock syncedSlaves in BatchResult is not checked
+I tried RLock(**Redisson master branch, redis 5.0.5**) with the following config and tried to test whether synchronous replication works with **master-slave**. After I killed one replica and the lock can still be granted(there was only one client trying to get the lock), what I expect is that the client failed to acquired the lock cause the command was not able to propagate to all the replicas.
+
+```java
+MasterSlaveServersConfig masterSlaveServersConfig = config.useMasterSlaveServers();
+        masterSlaveServersConfig
+            .setPassword("XXX")
+            .setMasterConnectionPoolSize(10)
+            .setMasterConnectionMinimumIdleSize(10)
+            .setConnectTimeout(5000)
+            .setTimeout(5000)
+            .setMasterAddress("redis://XXXX:6379")
+            .addSlaveAddress("redis://XXXX:6379")
+            .addSlaveAddress("redis://XXXX:6379");
+```
+
+After debug for a while, I found that BatchResult for EVAL & WAIT command was not checked in RedissonBaseLock.evalWriteAsync method,  i.e the syncedSlaves in BatchResult was not checked. 
+ 
+```java
+// org.redisson.RedissonBaseLock
+
+protected <T> RFuture<T> evalWriteAsync(....) { 
+  
+     future.onComplete((res, ex) -> {
+            // BatchResult is not checked here !!!
+            if (ex != null) {
+                r.tryFailure(ex);
+                return;
+            }
+
+            r.trySuccess(result.getNow());
+        });
+
+}
+```
+
+So is it because i misunderstand the synchronous replication mechanism used in Redisson or it's a bug
+
+
+
+
+
+

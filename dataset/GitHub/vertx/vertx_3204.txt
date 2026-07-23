@@ -1,0 +1,2 @@
+Unify HTTP/1 client connection progress queues
+A HTTP/1 client connection maintains two queue of stream request in progress and stream response in progress using the same field. Sometimes this field can be updated twice leading to race issues. We should instead use a single queue of all streams created by the connection. The queue is pushed when a new stream is created and popped when the stream response ends.

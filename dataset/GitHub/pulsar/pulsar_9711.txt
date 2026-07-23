@@ -1,0 +1,16 @@
+Creating and modifying authorization policies is not thread safe
+**Describe the bug**
+
+Creating and modifying authorization policies is not thread safe. It leads to unexpected NullPointerExceptions for example and could lead to authorization data corruption.
+
+**To Reproduce**
+
+The flaky test #9709 is one example of the problem.
+
+**Expected behavior**
+
+Creating and modifying authorization policies should be thread safe.
+
+**Observations**
+
+It looks like the [org.apache.pulsar.common.policies.data.AuthPolicies](https://github.com/apache/pulsar/blob/master/pulsar-common/src/main/java/org/apache/pulsar/common/policies/data/AuthPolicies.java) data structures are modified without a way to ensure thread safety and data consistency.

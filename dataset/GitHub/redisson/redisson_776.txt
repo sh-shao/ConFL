@@ -1,0 +1,35 @@
+StackOverflowException in URLBuilder
+URIBuilder is not thread-safe. Following scenario causes infinite recursion and StackOverflowException when someone tries to create new URL:
+
+1. `URLBuilder.replaceURLFactory()` - URLBuilder.currentFactory set to null, URL.factory set to custom
+2. `URLBuilder.replaceURLFactory()` - URLBuilder.currentFactory set to custom, URL.factory set to custom again
+3. `new URL("http://google.com")` fails on StackOverflowException. Following code is an infinite loop because currentFactory points to "this":
+```
+public URLStreamHandler createURLStreamHandler(String protocol) {
+    (...)
+    if (currentFactory != null) {
+        return currentFactory.createURLStreamHandler(protocol);
+    }
+    (...)
+}
+```
+
+Sample stacktrace:
+```
+15:15:06.594 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.594 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.594 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+15:15:06.595 [DEBUG] [TestEventLogger]         at org.redisson.misc.URLBuilder$1.createURLStreamHandler(URLBuilder.java:78)
+```
+
+Affected version: 3.3.0

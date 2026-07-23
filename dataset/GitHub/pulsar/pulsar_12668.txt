@@ -1,0 +1,18 @@
+Protocol Handlers and Proxy Extensions: ability to use a dedicated EventLoopGroup for IO
+Currently (Pulsar 2.9) the Broker Protocol Handlers (and Proxy Extensions) share the same EventLoopGroup among Pulsar Server connection handlers and the custom Protocol Handlers.
+
+We have two issues here:
+1) if the Protocol Handler comes to execute some blocking operation using PulsarClient or PulsarAdmin, it is possible to fall into a deadlock (if the internal client connects to the local broker)
+2) the configuration for Pulsar may not be the best choice for different protocols.
+
+Problem 1) is very dangerous, fixing Problem 2) is a nice-to-have.     
+
+**Describe the solution you'd like**
+We could have a broker level configuration to say that each PH should have its own "workergroup", this way we never fall into the deadlock situation.
+
+**Describe alternatives you've considered**
+Require PHs to have only non-blocking code in respect to Pulsar operations, but this is hard to require, as any mistake in this area leads to an unpredictable deadlock, not only for the PH but also for the Pulsar service itself.
+
+**Additional context**
+I am working on KOP, and we have some code that automatically creates topics/namespaces on demand.
+For KOP we can refactor our code to be fully async but the problem is for everyone who writes a PH (or Proxy Extension)

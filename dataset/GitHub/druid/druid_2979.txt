@@ -1,0 +1,11 @@
+io.druid.granularity.QueryGranularity has class initialization deadlock.
+`io.druid.granularity.QueryGranularity` has the following static fields
+
+``` java
+  public static final QueryGranularity ALL = new AllGranularity();
+  public static final QueryGranularity NONE = new NoneGranularity();
+```
+
+Intellij gives a warning related to https://bugs.openjdk.java.net/browse/JDK-6301579 where static initializers of a class that use a subclass can deadlock.
+
+This happens pretty regularly in one of our libraries that uses druid jackson serde stuff but only on one pipeline. Haven't seen it anywhere else yet.

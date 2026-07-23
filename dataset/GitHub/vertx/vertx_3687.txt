@@ -1,0 +1,47 @@
+Connection pool can create connections which ignore keep alive settings
+### Version
+
+3.9.1 but this also happens on latest commit
+
+### Context
+
+Since some time we've seen `WebClient` throwing `Connection reset` error on first request after a period of inactivity. I know that our gateway closes inactive connections after some time. The question was why `WebClient` doesn't close such connections, the default keep alive settings should remove inactive connections after 60 seconds. After some debugging I tracked the issue down to `Pool` having connections that don't have `expirationTimestamp` set. I believe there's some race condition with how connections are created and consumed. The flow is like this:
+
+1. First request is started. First connection will be created but it takes significant time for it to be connected.
+2. In the same time a second request is started. A second connection will be created but this one connects instantly.
+3. Second request finishes.
+4. Second connection is now available and it's used to complete the first request.
+5. First connection has finished connecting but the waiter list is empty. It will sit unused in the pool. `expirationTimestamp` is not set so keep alive settings are ignored.
+6. After some time our gateway closes the inactive connection by sending RST packet.
+7. Third request is started, it will use that first connection (now closed on the gateway side) and throw `Connection reset` error.
+
+### Do you have a reproducer?
+
+See [here](https://github.com/kotcrab/vert.x/commit/53fb81b28d49fb7b5e0959e94d5300176f04c829).
+Note that I added a delay in `HttpChannelConnector` to simulate slow first connection. This reproduces the issue reliably. Of course in our environment I can reproduce the issue with unchanged vertx 3.9.1 and 3.9.4.
+
+### Steps to reproduce
+
+1. Run `IssueReproducer.java`
+2. Output should look like this
+```
+Connection satisfied waiters: 1
+Request response: 200
+Request response: 200
+Connection with expiration
+Connection with expiration
+Connection with expiration
+Connection with expiration
+Connection satisfied waiters: 0
+Connection with expiration
+Connection with no expiration
+Connection with expiration
+Connection with no expiration
+Connection with no expiration
+...
+```
+3. A pool now has a connection that won't be removed even if its keep alive time passes (`expirationTimestamp` of this connection is 0).
+
+### Extra
+
+Tested on Linux and macOS. JVM 11.

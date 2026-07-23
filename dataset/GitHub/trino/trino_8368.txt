@@ -1,0 +1,4 @@
+Hive transaction heartbeat not cancelled even after query failure. 
+We came across a weird issue with querying hive tables via presto (347) - We ran a query (q1) via JDBC on the table (t1) which acquired a SHARED_READ lock the table t1. Then there was a socket timeout at the client-side and this query got terminated. But the lock was never released since HMS was getting heartbeat and the cleaner was not clearing this lock. 
+
+`TXN_LAST_HEARTBEAT` is getting updated on the HMS from the coordinator even after the query was failed/aborted. 

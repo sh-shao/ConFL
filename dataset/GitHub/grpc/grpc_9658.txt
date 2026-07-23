@@ -1,0 +1,25 @@
+CallOptions is not thread-safe
+Although it is annotated with `Immutable`, [CallOptions](https://github.com/grpc/grpc-java/blob/master/api/src/main/java/io/grpc/CallOptions.java) has no final fields, and is therefore not actually thread-safe. The javadoc for the `Immutable` annotations states:
+
+> The class to which this annotation is applied is immutable. This means that its state cannot be seen to change by callers.
+
+This can be shown to be violated with a simple [JCStress](https://github.com/openjdk/jcstress) test case; here is an [example](https://github.com/kilink/grpc-jcstress/blob/main/src/jcstress/java/net/kilink/jcstress/CallOptionsTest.java).
+
+When I run the above test case on my aarch64 machine, I get results such as the following, showing memory visibility issues:
+
+```
+       Observed state   Occurrences   Expectation  Interpretation                                              
+  -1, -1, not visible   125,492,608    ACCEPTABLE  Object is not seen yet.                                     
+    -2, -2, authority            11     FORBIDDEN  Everything else is forbidden.                               
+         -2, -2, null             8     FORBIDDEN  Everything else is forbidden.                               
+     5, -2, authority             6     FORBIDDEN  Everything else is forbidden.                               
+      5, 5, authority     2,139,458    ACCEPTABLE  Seen the complete object.           
+```
+
+Although to be honest, the above test case is not really needed, as one can simply refer to the JLS [1] [2] to see that CallOptions is not safely published and is therefore not guaranteed to be seen as consistent across threads.
+
+The CallOptions class has a [comment ](https://github.com/grpc/grpc-java/blob/master/api/src/main/java/io/grpc/CallOptions.java#L46-L48) explaining why the fields are not final, and it seems to be for stylistic reasons. I would think correctness would outweigh such concerns and the fields should be made final, or the `Immutable` annotation should be removed from the class.
+
+
+[1] https://shipilev.net/blog/2014/safe-public-construction/#_safe_publication
+[2] https://docs.oracle.com/javase/specs/jls/se7/html/jls-17.html#jls-17.5

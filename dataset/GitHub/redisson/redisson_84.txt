@@ -1,0 +1,54 @@
+Lock reentrancy race
+in RedissonLock.tryLockInner(long, TimeUnit):
+
+``` java
+                String res = connection.setexnx(getName(), currentLock, time);  /* A */
+                if ("OK".equals(res)) {
+                    return null;
+                } else {
+                    LockValue lock = (LockValue) connection.get(getName());
+                    if (lock != null && lock.equals(currentLock)) {
+                        lock.incCounter();
+                        connection.psetex(getName(), time, lock); /* B */
+                        return null;
+                    }
+
+                    Long ttl = connection.pttl(getName());
+                    return ttl;
+                }
+```
+
+At line A the lock key is set only if it doesn't exist (NX), but on line B it's set assuming it still exists. If the lock timeouts between A and B, another process may obtain the lock, which is then overwritten at B.
+
+Here's a test case:
+
+``` java
+    @Test
+    public void testTryLockInner() throws InterruptedException {
+        redisson.flushdb();
+        final CountDownLatch latch = new CountDownLatch(1);
+        final CountDownLatch latch2 = new CountDownLatch(1);
+        new Thread() {
+            public void run() {
+                final RLock expiringLock = redisson.getLock("lock");
+                expiringLock.lock(500, TimeUnit.MILLISECONDS);
+                latch.countDown();
+                expiringLock.lock(500, TimeUnit.MILLISECONDS);
+                latch2.countDown();
+            };
+        }.start();
+        latch.await();
+        final RLock lock = redisson.getLock("lock");
+        lock.lock();
+        latch2.await();
+        Assert.assertEquals(1, lock.getHoldCount());
+    }
+```
+
+This will reliably fail if:
+- run in debug mode with a breakpoint placed in RedissonLock.tryLockInner(long, TimeUnit) on line B (line 306 for 508b9034be5f72523a0b79e40e761d6cbac1c60e). 
+- the breakpoint is released after waiting at least half a second
+
+The same problem is also present in the no-args method RedissonLock.tryLockInner(). (though a race condition is possible only if upgrading an expiring lock)
+
+I wonder if reentrancy support shouldn't be done purely in java.

@@ -1,0 +1,12 @@
+Itermittent test timeout on PersistentFailoverE2ETest.testSimpleConsumerEventsWithoutPartition 
+#### Expected behavior
+The test is timing out several times. eg: 
+https://builds.apache.org/job/pulsar_precommit_java8/724/testReport/junit/org.apache.pulsar.broker.service/PersistentFailoverE2ETest/testSimpleConsumerEventsWithoutPartition/ 
+
+Test thread is blocked on: 
+
+https://github.com/apache/incubator-pulsar/blob/8fbb926089effcadf59e199fe69ec65b4bbe4eae/pulsar-broker/src/test/java/org/apache/pulsar/broker/service/PersistentFailoverE2ETest.java#L217
+
+In particular it's waiting on the ` listener.activeQueue.take().intValue())`
+
+https://github.com/apache/incubator-pulsar/blob/8fbb926089effcadf59e199fe69ec65b4bbe4eae/pulsar-broker/src/test/java/org/apache/pulsar/broker/service/PersistentFailoverE2ETest.java#L102-L105

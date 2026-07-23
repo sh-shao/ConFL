@@ -1,0 +1,93 @@
+RPriorityBlockedQueue takes element even after the calling thread has been interrupted
+**Expected behavior**
+
+RPriorityBlockedQueue element available to be taken by the second thread after the first one has been interrupted before the element appeared in the queue
+
+**Actual behavior**
+
+The element has been read by someone else
+
+**Steps to reproduce or test case**
+
+Testcase is almost the same as RedissonBlockingQueueTest.testTakeInterrupted() with exceptions:
+
+1. `getPriorityBlockingQueue()` is used instead of `getBlockingQueue()`
+2. Had to use `@RepeatedTest(30)` since it's not 100% reproducible. I have about 6 succeeds out of 30 runs.
+
+```
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
+import org.redisson.RedisRunner.RedisProcess;
+import org.redisson.api.RBlockingQueue;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+
+public class RedissonPriorityBlockingQueueInterruptTest {
+    private static RedissonClient redisson;
+
+    <T> RBlockingQueue<T> getQueue(RedissonClient redisson) {
+        return redisson.getPriorityBlockingQueue("queue");
+    }
+    
+    @BeforeAll
+    public static void setUpClass() throws Exception {
+        RedisProcess runner = new RedisRunner()
+            .nosave()
+            .randomDir()
+            .randomPort()
+            .run();
+
+        Config config = new Config();
+        config.useSingleServer().setAddress(runner.getRedisServerAddressAndPort());
+        
+        redisson = Redisson.create(config);
+    }
+    
+    @RepeatedTest(30)
+//    @Test
+    public void testTakeInterrupted() throws InterruptedException {
+        final AtomicBoolean interrupted = new AtomicBoolean();
+        
+        Thread t = new Thread() {
+            public void run() {
+                try {
+                    RBlockingQueue<Integer> queue1 = getQueue(redisson);
+                    queue1.take();
+                } catch (InterruptedException e) {
+                    interrupted.set(true);
+                }
+            };
+        };
+
+        t.start();
+        t.join(1000);
+        
+        t.interrupt();
+        Awaitility.await().atMost(Duration.ofSeconds(1)).untilTrue(interrupted);
+
+        RBlockingQueue<Integer> q = getQueue(redisson);
+        q.add(1);
+        Thread.sleep(1000);
+        assertThat(q.contains(1)).isTrue();        
+    }
+}
+```
+
+**Redis version**
+
+4.0.14 (alpine)
+
+**Redisson version**
+
+3.15.6, 3.16.2-SNAPSHOT
+
+**Redisson configuration**
+
+Default, SingleServer

@@ -1,0 +1,8 @@
+[Java client] Consumer#receive returns null in case of InterruptedException and does not reset Thread.interrupted flag
+**Describe the bug**
+if you execute Consumer#receive() and thread is Interrupted the method returns a null value but it does not set Thread.currentThead().interrupt().
+This way the caller is not aware of the Interrupted status of the Thread and cannot deal with this situation appropriately.
+
+
+**Expected behavior**
+Returning null is fine, but we must set Thread.currentThread.interrupt() and also document this behaviour in the javadocs 

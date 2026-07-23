@@ -1,0 +1,37 @@
+Deadlock using RedissonMultiLock
+I am using simple app to run on 2 clients to test locks.
+While using RedissonMultiLock with 3 locks both clients blocks.
+
+```
+public class App 
+{
+    public static void main( String[] args )
+    {
+        Config config = new Config();
+        config.useSingleServer().setAddress("127.0.0.1:6379");
+        RedissonClient client = Redisson.create(config);
+
+        for(int i = 0; i < 100000; i++)
+        {
+            RLock lock1 = client.getLock("lock1");
+            RLock lock2 = client.getLock("lock2");
+            RLock lock3 = client.getLock("lock3");
+
+            RedissonMultiLock lock = new RedissonMultiLock(lock1, lock2, lock3);
+            lock.lock();
+
+             RBucket<Object> bucket = client.getBucket("myLong");
+             Object value = bucket.get();
+             long newValue = 1;
+             if(value != null){
+                 newValue = (Long)value;
+                 newValue++;
+             }
+             bucket.set(newValue);
+
+            lock.unlock();
+        }
+        System.exit(0);
+    }
+}
+```

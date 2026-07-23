@@ -1,0 +1,601 @@
+MM-less with overlordSingleContainer type adds wrong startup probe for peon task
+### Affected Version
+v32.0.0
+
+### Description
+
+I am trying out the middlemanager-less configuration (k8s-jobs) WITH zookeeper (without zookeeper seems to not work reliably).
+However when deploying my configuration in the most easy config possible (using overlordSingleContainer as template), it seems to add the original startup probe (no readiness or liveness probe though) with port 8088.
+It also seems that i can not change that peon port to 8088, so that the pod would eventually become healthy.
+With this in mind, I do wonder how this has ever worked for anyone.
+
+EDIT: I have found that here, the readiness and liveness probes are removed: https://github.com/apache/druid/blob/5ef94c9deebea6cc52dcc504b83f451c73d5c036/extensions-contrib/kubernetes-overlord-extensions/src/main/java/org/apache/druid/k8s/overlord/taskadapter/K8sTaskAdapter.java#L312
+The startup probe remains though. Maybe having them removed would already make the overlord templates work for me.
+
+When trying the customTemplateAdapter suddenly my coordinator (asOverlord) can not do leader election anymore, switching only the `druid.indexer.runner.k8s.adapter.type` property back to `overlordSingleContainer` will make its leader election work again (though with the before mentioned remaining issue).
+Error:
+`listener becomeLeader() failed. Unable to become leader: {exceptionType=java.lang.RuntimeException, exceptionMessage=java.lang.reflect.InvocationTargetException, class=org.apache.druid.curator.discovery.CuratorDruidLeaderSelector}`
+And:
+`TaskMaster set a new Lifecycle without the old one being cleared!  Race condition: {class=org.apache.druid.indexing.overlord.DruidOverlord}`
+
+Ideally I want to be able to use different pod templates in the end, like mentioned here: https://druid.apache.org/docs/32.0.0/development/extensions-contrib/k8s-jobs/
+Either with or without zookeeper (though without would be preferred).
+
+Please include as much detailed information about the problem as possible.
+Cluster size: 3 coordinator, 3 broker, 3 router, 1 historical, + 3 zookeeper
+
+Druid resource (without historical, as i've got it separated):
+```
+apiVersion: druid.apache.org/v1alpha1
+kind: Druid
+metadata:
+  name: druid
+  namespace: druid
+spec:
+  common.runtime.properties: >
+    # Zookeeper
+
+    druid.zk.service.host=zookeeper-headless
+
+
+    # Metadata Store
+
+    druid.metadata.storage.type=mysql
+
+    druid.metadata.storage.connector.connectURI=jdbc:mysql://${env:METADATA_STORAGE_ENDPOINT}/druid
+
+    druid.metadata.storage.connector.user=${env:METADATA_STORAGE_USER}
+
+    druid.metadata.storage.connector.password=${env:METADATA_STORAGE_PASSWORD}
+
+
+    # Emitter initializers
+
+    druid.emitter=switching
+
+
+    # Request logging
+
+    druid.request.logging.feed=request
+
+    druid.request.logging.type=emitter
+
+
+    # Switching Emitter
+
+    druid.emitter.switching.emitters={"metrics":["prometheus"],
+    "request":["logging"]}
+
+
+    # Prometheus emitter
+
+    druid.emitter.prometheus.port=9100
+
+
+    druid.emitter.prometheus.addHostAsLabel=true
+
+    druid.emitter.prometheus.addServiceAsLabel=true
+
+    druid.emitter.prometheus.dimensionMapPath=/druid/metric-dimensions/metricDimensions.json
+
+    druid.indexer.fork.property.druid.emitter.prometheus.strategy=pushgateway
+
+    druid.indexer.fork.property.druid.emitter.prometheus.pushGatewayAddress=http://prometheus-pushgateway.monitoring:9091
+
+    # org.apache.druid.java.util.metrics.JvmCpuMonitor requires Sigar, which
+    doesn't work on arm64, see:
+    https://github.com/apache/druid/blob/08b5951cc53c4fe474a129500c62a6adad78337f/processing/src/test/java/org/apache/druid/java/util/metrics/SigarLoadTest.java#L35
+
+    druid.monitoring.monitors=["org.apache.druid.java.util.metrics.JvmMonitor","org.apache.druid.client.cache.CacheMonitor","org.apache.druid.java.util.metrics.JvmThreadsMonitor","org.apache.druid.server.metrics.WorkerTaskCountStatsMonitor","org.apache.druid.server.metrics.ServiceStatusMonitor","org.apache.druid.java.util.metrics.OshiSysMonitor"]
+
+
+    # Indexer Logs
+
+    druid.indexer.logs.type=s3
+
+    druid.indexer.logs.s3Bucket=druid
+
+    druid.indexer.logs.s3Prefix=druid/logs
+
+    druid.indexer.logs.kill.enabled=true
+
+    druid.indexer.logs.kill.durationToRetain=604800000
+
+
+    # Deep Storage
+
+    druid.storage.type=s3
+
+    druid.storage.bucket=druid
+
+    druid.storage.baseKey=druid/segments
+
+
+    # Extensions
+
+    druid.extensions.loadList=["druid-histogram","druid-datasketches","druid-lookups-cached-global","mysql-metadata-storage","druid-s3-extensions","druid-parquet-extensions","druid-kafka-indexing-service","druid-avro-extensions","prometheus-emitter","druid-kubernetes-overlord-extensions"]
+  commonConfigMountPath: /opt/druid/conf/druid/cluster/_common
+  defaultProbes: false
+  deleteOrphanPvc: true
+  disablePVCDeletionFinalizer: false
+  env:
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: POD_NAMESPACE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: METADATA_STORAGE_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          key: password
+          name: mysql-connection
+    - name: METADATA_STORAGE_USER
+      valueFrom:
+        secretKeyRef:
+          key: username
+          name: mysql-connection
+    - name: METADATA_STORAGE_ENDPOINT
+      valueFrom:
+        secretKeyRef:
+          key: endpoint
+          name: mysql-connection
+  forceDeleteStsPodOnError: true
+  ignored: false
+  image: druid/druid:32.0.0 # custom image that supports arm64, pleaced with original here
+  imagePullPolicy: Always
+  jvm.options: |
+    -server
+    -XX:+UseZGC
+    -XX:+AlwaysPreTouch
+    -XX:+ExitOnOutOfMemoryError
+    -Duser.timezone=UTC
+    -Dfile.encoding=UTF-8
+    -Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager
+    -Djava.io.tmpdir=/druid/data
+  log4j.config: |
+    <?xml version="1.0" encoding="UTF-8" ?>
+    <Configuration status="WARN">
+        <Appenders>
+            <Console name="Console" target="SYSTEM_OUT">
+                <JSONLayout compact="true" eventEol="true" properties="true" stacktraceAsString="true" includeTimeMillis="true" />
+            </Console>
+        </Appenders>
+        <Loggers>
+            <Root level="info">
+                <AppenderRef ref="Console"/>
+            </Root>
+        </Loggers>
+    </Configuration>
+  nodes:
+    broker:
+      druid.port: 8088
+      extra.jvm.options: |
+        -Xms1g
+        -Xmx1g
+        -XX:MaxDirectMemorySize=4g
+      kind: Deployment
+      nodeConfigMountPath: /opt/druid/conf/druid/cluster/query/broker
+      nodeType: broker
+      podDisruptionBudgetSpec:
+        maxUnavailable: 1
+      podLabels:
+        app.kubernetes.io/component: broker
+      podManagementPolicy: Parallel
+      readinessProbe:
+        failureThreshold: 20
+        httpGet:
+          path: /druid/broker/v1/readiness
+          port: 8088
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 5
+      replicas: 3
+      resources:
+        requests:
+          cpu: 500m
+          memory: 4Gi
+      runtime.properties: >
+        druid.broker.balancer.type=connectionCount
+
+        druid.broker.http.maxQueuedBytes=10MiB
+
+        druid.broker.http.numConnections=50
+
+        druid.broker.retryPolicy.numTries=3
+
+        druid.broker.select.tier=highestPriority
+
+
+        # org.apache.druid.java.util.metrics.JvmCpuMonitor requires Sigar, which
+        doesn't work on arm64, see:
+        https://github.com/apache/druid/blob/08b5951cc53c4fe474a129500c62a6adad78337f/processing/src/test/java/org/apache/druid/java/util/metrics/SigarLoadTest.java#L35
+
+        druid.monitoring.monitors=["org.apache.druid.java.util.metrics.JvmMonitor","org.apache.druid.client.cache.CacheMonitor","org.apache.druid.java.util.metrics.JvmThreadsMonitor","org.apache.druid.server.metrics.HistoricalMetricsMonitor","org.apache.druid.server.metrics.SegmentStatsMonitor","org.apache.druid.server.metrics.QueryCountStatsMonitor","org.apache.druid.server.metrics.WorkerTaskCountStatsMonitor","org.apache.druid.server.metrics.ServiceStatusMonitor"]
+
+
+        druid.processing.buffer.sizeBytes=1Gi
+
+        druid.processing.numMergeBuffers=2
+
+        druid.processing.numThreads=0
+
+
+        druid.query.groupBy.defaultOnDiskStorage=8Gi
+
+        druid.query.groupBy.maxOnDiskStorage=8Gi
+
+        druid.query.scheduler.numThreads=55
+
+        druid.query.scheduler.laning.strategy=manual
+
+        druid.query.scheduler.laning.lanes.minimal=15
+
+        druid.query.scheduler.laning.lanes.reduced=25
+
+        druid.query.scheduler.laning.lanes.full=15
+
+
+        druid.server.http.enableRequestLimit=true
+
+        druid.server.http.numThreads=60
+
+
+        druid.service=druid/broker
+      startUpProbe:
+        failureThreshold: 20
+        httpGet:
+          path: /druid/broker/v1/readiness
+          port: 8088
+        initialDelaySeconds: 5
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 5
+    coordinator:
+      druid.port: 8088
+      extra.jvm.options: |
+        -Xms1g
+        -Xmx1g
+      kind: Deployment
+      nodeConfigMountPath: /opt/druid/conf/druid/cluster/master/coordinator-overlord
+      nodeType: coordinator
+      podDisruptionBudgetSpec:
+        maxUnavailable: 1
+      podLabels:
+        app.kubernetes.io/component: coordinator
+      podManagementPolicy: Parallel
+      replicas: 3
+      resources:
+        requests:
+          cpu: 1
+          memory: 4Gi
+      runtime.properties: >
+        druid.coordinator.asOverlord.enabled=true
+
+        druid.coordinator.asOverlord.overlordService=druid/overlord
+
+        druid.coordinator.balancer.strategy=diskNormalized
+
+        druid.coordinator.kill.durationToRetain=PT0S
+
+        druid.coordinator.kill.maxSegments=20000
+
+        druid.coordinator.kill.on=true
+
+        druid.coordinator.kill.period=PT1H
+
+        druid.coordinator.dutyGroups=["compaction"]
+
+        druid.coordinator.compaction.duties=["compactSegments"]
+
+        druid.coordinator.compaction.period=PT60S
+
+
+        druid.indexer.storage.recentlyFinishedThreshold=P7D
+
+        druid.indexer.storage.type=metadata
+
+
+        # org.apache.druid.java.util.metrics.JvmCpuMonitor requires Sigar, which
+        doesn't work on arm64, see:
+        https://github.com/apache/druid/blob/08b5951cc53c4fe474a129500c62a6adad78337f/processing/src/test/java/org/apache/druid/java/util/metrics/SigarLoadTest.java#L35
+
+        druid.monitoring.monitors=["org.apache.druid.java.util.metrics.JvmMonitor","org.apache.druid.client.cache.CacheMonitor","org.apache.druid.java.util.metrics.JvmThreadsMonitor","org.apache.druid.server.metrics.WorkerTaskCountStatsMonitor","org.apache.druid.server.metrics.ServiceStatusMonitor"]
+
+
+        druid.service=druid/coordinator
+
+
+        # K8s Jobs
+
+        druid.indexer.runner.capacity=100
+
+        druid.indexer.runner.namespace=druid
+
+        druid.indexer.runner.type=k8s
+
+        druid.indexer.runner.maxTaskDuration=PT1H
+
+        druid.indexer.runner.K8sjobLaunchTimeout=PT15M
+
+        druid.indexer.runner.javaOptsArray=["-Xms8g",
+        "-Xmx8g","-XX:MaxDirectMemorySize=7g"]
+
+        druid.indexer.task.encapsulatedTask=true
+
+        druid.indexer.runner.k8s.adapter.type=overlordSingleContainer
+
+        #druid.indexer.runner.k8s.adapter.type=customTemplateAdapter
+
+        druid.indexer.runner.k8s.podTemplate.base=/druid/k8s/base-pod-template.yaml
+    router:
+      druid.port: 8088
+      extra.jvm.options: |
+        -Xms2048M
+        -Xmx2048M
+      ingress:
+        rules:
+          - host: druid.my-internal-domain.com
+            http:
+              paths:
+                - backend:
+                    service:
+                      name: druid-druid-router
+                      port:
+                        number: 8088
+                  path: /
+                  pathType: ImplementationSpecific
+      kind: Deployment
+      nodeConfigMountPath: /opt/druid/conf/druid/cluster/query/router
+      nodeType: router
+      podDisruptionBudgetSpec:
+        maxUnavailable: 1
+      podLabels:
+        app.kubernetes.io/component: router
+      podManagementPolicy: Parallel
+      replicas: 3
+      resources:
+        requests:
+          cpu: 1
+          memory: 4Gi
+      runtime.properties: >
+        druid.router.http.numConnections=50
+
+        druid.router.http.numMaxThreads=150
+
+        druid.router.http.readTimeout=PT5M
+
+        druid.router.managementProxy.enabled=true
+
+
+        # org.apache.druid.java.util.metrics.JvmCpuMonitor requires Sigar, which
+        doesn't work on arm64, see:
+        https://github.com/apache/druid/blob/08b5951cc53c4fe474a129500c62a6adad78337f/processing/src/test/java/org/apache/druid/java/util/metrics/SigarLoadTest.java#L35
+
+        druid.monitoring.monitors=["org.apache.druid.java.util.metrics.JvmMonitor","org.apache.druid.client.cache.CacheMonitor","org.apache.druid.java.util.metrics.JvmThreadsMonitor","org.apache.druid.server.metrics.QueryCountStatsMonitor","org.apache.druid.server.metrics.WorkerTaskCountStatsMonitor","org.apache.druid.server.metrics.ServiceStatusMonitor"]
+
+
+        druid.server.http.numThreads=100
+
+
+        druid.service=druid/router
+      startUpProbe:
+        failureThreshold: 10
+        httpGet:
+          path: /status/health
+          port: 8088
+        initialDelaySeconds: 30
+        periodSeconds: 10
+        successThreshold: 1
+        timeoutSeconds: 5
+  podAnnotations:
+    environment: sandbox
+  podLabels:
+    environment: sandbox
+  podManagementPolicy: Parallel
+  readinessProbe:
+    failureThreshold: 10
+    httpGet:
+      path: /status/health
+      port: 8088
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  rollingDeploy: true
+  scalePvcSts: false
+  securityContext:
+    fsGroup: 1000
+    runAsGroup: 1000
+    runAsNonRoot: true
+    runAsUser: 1000
+  services:
+    - kind: Service
+      spec:
+        ports:
+          - name: http
+            port: 8088
+            protocol: TCP
+          - name: metrics
+            port: 9100
+            protocol: TCP
+        type: ClusterIP
+  startScript: /druid.sh
+  startUpProbe:
+    failureThreshold: 10
+    httpGet:
+      path: /status/health
+      port: 8088
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+  volumeMounts:
+    - mountPath: /druid/data
+      name: data-volume
+    - mountPath: /druid/metric-dimensions
+      name: metric-dimensions
+    - mountPath: /druid/k8s
+      name: pod-templates
+  volumes:
+    - emptyDir: {}
+      name: data-volume
+    - configMap:
+        name: metric-dimensions
+      name: metric-dimensions
+    - configMap:
+        name: pod-templates
+      name: pod-templates
+```
+
+pod-templates configmap:
+```
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pod-templates
+  namespace: druid
+data:
+  base-pod-template.yaml: |
+    apiVersion: v1
+    kind: PodTemplate
+    template:
+      metadata:
+        labels:
+          druid.k8s.peons: 'true'
+        annotations:
+          foo: bar
+      spec:
+        volumes:
+          - name: common-config-volume
+            configMap:
+              name: druid-druid-common-config
+              defaultMode: 420
+          - name: nodetype-config-volume
+            configMap:
+              name: druid-druid-coordinator-config
+              defaultMode: 420
+          - name: data-volume
+            emptyDir: {}
+          - name: metric-dimensions
+            configMap:
+              name: metric-dimensions
+              defaultMode: 420
+          - name: pod-templates
+            configMap:
+              name: pod-templates
+              defaultMode: 420
+        containers:
+          - name: main
+            image: druid/druid:32.0.0
+            command:
+              - sh
+              - '-c'
+              - |
+                /peon.sh /druid/data 1
+            ports:
+              - name: druid-tls-port
+                containerPort: 8091
+                protocol: TCP
+              - name: druid-port
+                containerPort: 8100
+                protocol: TCP
+              - name: metrics
+                containerPort: 9100
+                protocol: TCP
+            env:
+              - name: POD_NAME
+                valueFrom:
+                  fieldRef:
+                    apiVersion: v1
+                    fieldPath: metadata.name
+              - name: POD_NAMESPACE
+                valueFrom:
+                  fieldRef:
+                    apiVersion: v1
+                    fieldPath: metadata.namespace
+              - name: METADATA_STORAGE_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    name: mysql-connection
+                    key: password
+              - name: METADATA_STORAGE_USER
+                valueFrom:
+                  secretKeyRef:
+                    name: mysql-connection
+                    key: username
+              - name: METADATA_STORAGE_ENDPOINT
+                valueFrom:
+                  secretKeyRef:
+                    name: mysql-connection
+                    key: endpoint
+              - name: TASK_DIR
+                value: /druid/data/persistent/task
+              - name: druid_host
+                valueFrom:
+                  fieldRef:
+                    apiVersion: v1
+                    fieldPath: status.podIP
+              - name: HOSTNAME
+                valueFrom:
+                  fieldRef:
+                    apiVersion: v1
+                    fieldPath: metadata.name
+            resources:
+              limits:
+                cpu: '1'
+                memory: 18G
+              requests:
+                cpu: '1'
+                memory: 18G
+            volumeMounts:
+              - name: common-config-volume
+                readOnly: true
+                mountPath: /opt/druid/conf/druid/cluster/_common
+              - name: nodetype-config-volume
+                readOnly: true
+                mountPath: /opt/druid/conf/druid/cluster/master/coordinator-overlord
+              - name: data-volume
+                mountPath: /druid/data
+              - name: metric-dimensions
+                mountPath: /druid/metric-dimensions
+              - name: pod-templates
+                mountPath: /druid/k8s
+            startupProbe:
+              httpGet:
+                path: /status/health
+                port: 8100
+                scheme: HTTP
+              initialDelaySeconds: 5
+              timeoutSeconds: 5
+              periodSeconds: 10
+              successThreshold: 1
+              failureThreshold: 10
+            terminationMessagePath: /dev/termination-log
+            terminationMessagePolicy: File
+            imagePullPolicy: Always
+        restartPolicy: Never
+        terminationGracePeriodSeconds: 30
+        dnsPolicy: ClusterFirst
+        serviceAccountName: default
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          fsGroup: 1000
+        tolerations:
+          - key: node.kubernetes.io/not-ready
+            operator: Exists
+            effect: NoExecute
+            tolerationSeconds: 300
+          - key: node.kubernetes.io/unreachable
+            operator: Exists
+            effect: NoExecute
+            tolerationSeconds: 300
+        priority: 0
+        enableServiceLinks: true
+        preemptionPolicy: PreemptLowerPriority
+```

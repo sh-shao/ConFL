@@ -1,0 +1,39 @@
+Executing batch query with RMapAsync Hangs forever
+I have an inventory list of Millions of records that I want to insert in batches in Redis using Redisson Batch command.
+below is the code 
+```
+public void upsertInventoryInBatches(final List<ItemInventory> itemInventory) throws ExecutionException, InterruptedException {
+        RBatch batch = redissonClient.createBatch(BatchOptions.defaults().responseTimeout(300, TimeUnit.SECONDS));
+        RMapAsync<String, ItemInventory> map = batch.getMap(IMSConstant.REDIS_INVENTORY_MAP);
+        try {
+            for (ItemInventory item : itemInventory) {
+                map.mergeAsync(item.getKey(), item, (existing, newValue) -> {
+                    if (existing == null) {
+                        return newValue;
+                    } else {
+                        if (existing.getQuantity() == newValue.getQuantity()
+                                && existing.getMinMRP() == newValue.getMinMRP()) {
+                            return existing;
+                        }
+                        existing.setQuantity(item.getQuantity());
+                        existing.setMinMRP(item.getMinMRP());
+                        existing.setEarliestExpiryDate(item.getEarliestExpiryDate());
+                        existing.setVersion(item.getVersion());
+                        return existing;
+                    }
+                });
+    }
+
+        var res = batch.execute();  // Hangs with no result and no error
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+
+        }
+
+
+```
+
+the` batch.execute `statement just hangs with no error and no output.
+
+I am new to redisson and Redis and might not be doing it correctly. Looking for guidance on what I am doing wrong.
+Please note that the `batch.getMap(IMSConstant.REDIS_INVENTORY_MAP).putAsync(item.getKey(), item)` works fine but I want to merge the values.

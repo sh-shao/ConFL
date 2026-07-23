@@ -1,0 +1,12 @@
+Race in Server handler initialization
+When initializing an incoming client connection, [we call startAsync()](https://github.com/grpc/grpc-java/blob/master/netty/src/main/java/io/grpc/transport/netty/NettyServer.java#L84) on the transport, which [registers the handler](https://github.com/grpc/grpc-java/blob/master/netty/src/main/java/io/grpc/transport/netty/NettyServerTransport.java#L108) on a separate thread. This is obviously a race, and it would have probably been fixed if I had finished Service removal in #35.
+
+Symptom:
+
+```
+DEBUG i.n.channel.DefaultChannelPipeline - Discarded inbound message SimpleLeakAwareByteBuf(PooledUnsafeDirectByteBuf(ridx: 0, widx: 259, cap: 1024)) that reached at the tail of the pipeline. Please check your pipeline configuration.
+```
+
+The quickest fix would be to call awaitRunning() from initChannel(). That reduces the rate new connections can connect, but is probably the most expedient solution, until #35 is finished.
+
+@nmittler, thoughts?

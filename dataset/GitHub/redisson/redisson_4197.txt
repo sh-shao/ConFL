@@ -1,0 +1,36 @@
+RedissonSpinLock maybe has some problem during the spinning?
+redisson version: 3.16.8
+JDK: 1.8.0.312
+system: macOS 12.3 (21E230)
+cpu: Apple M1 Pro
+
+class: `RedissonSpinLock`
+method: `public boolean tryLock(long waitTime, long leaseTime, TimeUnit unit)`
+https://github.com/redisson/redisson/blob/d805a177546fc14788e731d3a29c6d0374eabcb1/redisson/src/main/java/org/redisson/RedissonSpinLock.java#L142
+
+When the lock (RedissonSpinLock) was not acquired at first time, but it is acquired during the spinning and `time <= 0`, the lock will keep locked until the leaseTime.
+But in that period of time, no one can really acquire the lock.
+
+Could it return true even if `time <= 0`?
+
+The code may look like:
+
+```java
+        LockOptions.BackOffPolicy backOffPolicy = backOff.create();
+        while (ttl != null) {
+            current = System.currentTimeMillis();
+            Thread.sleep(backOffPolicy.getNextSleepPeriod());
+            ttl = tryAcquire(leaseTime, unit, threadId);
+            if (ttl == null) {
+                return true;
+            }
+            time -= System.currentTimeMillis() - current;
+            if (time <= 0) {
+                acquireFailed(waitTime, unit, threadId);
+                return false;
+            }
+        }
+        return true;
+```
+
+Or maybe it should unlock itself when it the `time <= 0` before return false.

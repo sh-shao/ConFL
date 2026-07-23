@@ -1,0 +1,2 @@
+Possible race condition ServerImpl between start() and shutdown()
+I believe it may be possible if start and stop are called concurrently that the shared executor may not get released.  I'm not sure if this is an actual problem, but it does go against the @ ThreadSafe annotation.

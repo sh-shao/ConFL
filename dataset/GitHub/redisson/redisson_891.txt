@@ -1,0 +1,26 @@
+RReadWriteLock is incompatible with reentry r&w op
+While using RReadWriteLock, a bug (or not?) confuse me for a long time.
+
+**I described a wrong ops yesterday, and fix it now. Sorry about this.**
+
+There is a sure logic problem if ops like this:
+
+1. write lock A (succeed)
+2. read lock A (succeed)
+3. read unlock A (succeed)
+4. write unlock A (not hold by current thread!!!)
+
+Assuming every unlock op is after a holding check.
+
+So if there is no holding check and running in a concurrent environment, op4 may throw IllegalMonitorException.
+
+But it's ok as follows:
+
+1. write lock A (succeed)
+4. write lock A again (succeed)
+5. write unlock A (succeed)
+6. write unlock A (succeed)
+
+I found that "read unlock" will delete the whole lock without checking if there is any other write lock.
+
+Is it a bug, or it just shouldn't do and need to do in another way?

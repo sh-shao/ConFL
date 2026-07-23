@@ -1,0 +1,79 @@
+In Trino-JDBC calling TrinoResultSet.cancel can't really close completablaFuture thread
+When using Trino-JDBC, the implementation of `ResultSet.close` in Trino `ResultSet` will call the cancel method in AsyncIterator Class to cancel the current thread. Since the thread of AsyncIterator is a CompletableFuture implementation, it will not throw an Interupption Exception，even if the thread is in the wait state.
+If `TrinoResultSet.AsyncIterator.rowQueue` is full and the user closes TrinoJDBC connection/statement/resultSet at the same time, the current thread will be in the wait state and will never be cancelled, and the rawQueue memory held by the current thread will not be released. 
+When there are a large number of ResultSet requests that have not been fetched, and ResultSet.close is called, thread and memory leaks will result.
+
+```java
+private static class AsyncIterator<T>
+            extends AbstractIterator<T>
+    {
+        private static final int MAX_QUEUED_ROWS = 50_000;
+        private static final ExecutorService executorService = newCachedThreadPool(daemonThreadsNamed("Trino JDBC worker-%d"));
+
+        private final StatementClient client;
+        private final BlockingQueue<T> rowQueue = new ArrayBlockingQueue<>(MAX_QUEUED_ROWS);
+        // Semaphore to indicate that some data is ready.
+        // Each permit represents a row of data (or that the underlying iterator is exhausted).
+        private final Semaphore semaphore = new Semaphore(0);
+        private final CompletableFuture<Void> future;
+
+        public AsyncIterator(Iterator<T> dataIterator, StatementClient client)
+        {
+            requireNonNull(dataIterator, "dataIterator is null");
+            this.client = client;
+            this.future = CompletableFuture.runAsync(() -> {
+                try {
+                    while (dataIterator.hasNext()) {
+                        rowQueue.put(dataIterator.next());
+                        semaphore.release();
+                    }
+                }
+                catch (InterruptedException e) {
+                    interrupt(e);
+                }
+                finally {
+                    semaphore.release();
+                }
+            }, executorService);
+        }
+
+        public void cancel()
+        {
+            future.cancel(true);
+        }
+
+        public void interrupt(InterruptedException e)
+        {
+            client.close();
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(new SQLException("ResultSet thread was interrupted", e));
+        }
+```
+
+I replace the implementation of CompletableFuture with FutureTask, can actually cancel the thread and avoid the leakage of memory and thread.
+
+```java
+        public AsyncIterator(Iterator<T> dataIterator, StatementClient client)
+        {
+            requireNonNull(dataIterator, "dataIterator is null");
+            this.client = client;
+//            this.future = CompletableFuture.runAsync(() -> {
+              this.future = executorService.submit(new Runnable() {
+                 @Override
+                 public void run()
+                 {
+                     try {
+                         while (dataIterator.hasNext()) {
+                             rowQueue.put(dataIterator.next());
+                             semaphore.release();
+                         }
+                     } catch (InterruptedException e) {
+                         interrupt(e);
+                     } finally {
+                         semaphore.release();
+                     }
+                 }
+             });
+        }
+
+```

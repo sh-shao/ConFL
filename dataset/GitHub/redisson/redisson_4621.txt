@@ -1,0 +1,259 @@
+Unable to acquire RLock using lockAsync() after failover
+<!--
+Try Redisson PRO https://redisson.pro with ultra-fast performance and support by SLA.
+-->
+
+**Description**
+It seems connection pool can not be gracefully restored after loosing connection to Redis. 
+We constantly receive exception while trying to use lockAsync() function.
+`PubSubConnectionPool no available Redis entries. Master entry host: AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT1 Disconnected hosts: [AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT1, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2] Hosts disconnected due to errors during `failedSlaveCheckInterval`: [AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2]`
+
+**Expected behavior**
+All connections in a pool should be gracefully restored. No issues with lock aquiring.
+
+**Actual behavior**
+
+When redisson loses connection we had seen a bunch of message like this:
+```
+Unable to send PING command over channel: [id: 0x831a4be9, L:/AA.BBB.MMM.TTT:33922 - R:AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2]
+
+org.redisson.client.RedisTimeoutException: Command execution timeout for command: (PING), params: [], Redis client: [addr=rediss://AA.BBB.CCC.XXX:PORT2]
+	at org.redisson.client.RedisConnection.lambda$async$0(RedisConnection.java:244)
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.expire(HashedWheelTimer.java:672)
+	at io.netty.util.HashedWheelTimer$HashedWheelBucket.expireTimeouts(HashedWheelTimer.java:747)
+	at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:472)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Unknown Source)
+```
+
+Next when connection is about to restore there are a couple of message like this:
+```A few messages with 
+Unable to unfreeze entry: [freeSubscribeConnectionsAmount=0, freeSubscribeConnectionsCounter=value:51:queue:0, freeConnectionsAmount=0, freeConnectionsCounter=value:66:queue:0, freezeReason=MANAGER, client=[addr=rediss://AA.BBB.CCC.XXX:PORT2], nodeType=SLAVE, firstFail=1666062333011]
+java.util.concurrent.CompletionException: org.redisson.client.RedisConnectionException: Unable to connect to Redis server: AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$BiRelay.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$CoCompletion.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.completeExceptionally(Unknown Source)
+	at org.redisson.connection.pool.ConnectionPool.lambda$createConnection$1(ConnectionPool.java:151)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.completeExceptionally(Unknown Source)
+	at org.redisson.connection.pool.ConnectionPool.promiseFailure(ConnectionPool.java:307)
+	at org.redisson.connection.pool.ConnectionPool.lambda$createConnection$6(ConnectionPool.java:273)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.completeExceptionally(Unknown Source)
+	at org.redisson.client.RedisClient$2$2.run(RedisClient.java:292)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Unknown Source)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at io.netty.util.concurrent.AbstractEventExecutor.safeExecute(AbstractEventExecutor.java:164)
+	at io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(SingleThreadEventExecutor.java:472)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:500)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:989)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Unknown Source)
+Caused by: org.redisson.client.RedisConnectionException: Unable to connect to Redis server: AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2
+	at org.redisson.connection.pool.ConnectionPool.lambda$createConnection$1(ConnectionPool.java:150)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.completeExceptionally(Unknown Source)
+	at org.redisson.connection.pool.ConnectionPool.promiseFailure(ConnectionPool.java:307)
+	at org.redisson.connection.pool.ConnectionPool.lambda$createConnection$6(ConnectionPool.java:273)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.completeExceptionally(Unknown Source)
+	at org.redisson.client.RedisClient$1$2.run(RedisClient.java:235)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Unknown Source)
+	at java.base/java.util.concurrent.FutureTask.run(Unknown Source)
+	at io.netty.util.concurrent.AbstractEventExecutor.safeExecute(AbstractEventExecutor.java:164)
+	at io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(SingleThreadEventExecutor.java:472)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:497)
+	... 4 common frames omitted
+Caused by: java.util.concurrent.CompletionException: io.netty.channel.ConnectTimeoutException: connection timed out: AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2
+	at java.base/java.util.concurrent.CompletableFuture.encodeRelay(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.completeRelay(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniRelay.tryFire(Unknown Source)
+	... 12 common frames omitted
+Caused by: io.netty.channel.ConnectTimeoutException: connection timed out: AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2
+	at io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe$1.run(AbstractNioChannel.java:261)
+	at io.netty.util.concurrent.PromiseTask.runTask(PromiseTask.java:98)
+	at io.netty.util.concurrent.ScheduledFutureTask.run(ScheduledFutureTask.java:170)
+	... 7 common frames omitted
+```
+
+After a couple seconds the messages above are disappeared and we're receiving following error messages when we're trying to acquire a lock:
+```java.util.concurrent.CompletionException: java.lang.IllegalStateException: None of slaves were synced
+	at org.redisson.RedissonBaseLock.lambda$evalWriteAsync$0(RedissonBaseLock.java:225)
+	at java.base/java.util.concurrent.CompletableFuture.uniHandle(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniHandle.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.complete(Unknown Source)
+	at org.redisson.command.CommandBatchService.lambda$executeAsync$7(CommandBatchService.java:322)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.complete(Unknown Source)
+	at org.redisson.command.RedisCommonBatchExecutor.handleResult(RedisCommonBatchExecutor.java:162)
+	at org.redisson.command.RedisExecutor.checkAttemptPromise(RedisExecutor.java:470)
+	at org.redisson.command.RedisExecutor.lambda$execute$3(RedisExecutor.java:171)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.complete(Unknown Source)
+	at org.redisson.client.handler.CommandDecoder.decodeCommandBatch(CommandDecoder.java:318)
+	at org.redisson.client.handler.CommandDecoder.decodeCommand(CommandDecoder.java:2AA)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:137)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:113)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:501)
+	at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:366)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.handler.ssl.SslHandler.unwrap(SslHandler.java:1526)
+	at io.netty.handler.ssl.SslHandler.decodeJdkCompatible(SslHandler.java:1275)
+	at io.netty.handler.ssl.SslHandler.decode(SslHandler.java:1322)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:501)
+	at io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:440)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:14AA)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919)
+	at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:163)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:714)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:650)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:576)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:493)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:989)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Unknown Source)
+Caused by: java.lang.IllegalStateException: None of slaves were synced
+	... 49 common frames omitted
+```
+
+Finally we constantly receiving next messages upon acquiring lock:
+```	
+org.redisson.client.RedisConnectionException: PubSubConnectionPool no available Redis entries. Master entry host: AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT1 Disconnected hosts: [AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT1, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2] Hosts disconnected due to errors during `failedSlaveCheckInterval`: [AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2, AA.BBB.CCC.XXX/AA.BBB.CCC.XXX:PORT2]
+	at org.redisson.connection.pool.ConnectionPool.get(ConnectionPool.java:CCC7)
+	at org.redisson.connection.pool.PubSubConnectionPool.get(PubSubConnectionPool.java:35)
+	at org.redisson.connection.pool.PubSubConnectionPool.get(PubSubConnectionPool.java:42)
+	at org.redisson.connection.balancer.LoadBalancerManager.nextPubSubConnection(LoadBalancerManager.java:253)
+	at org.redisson.connection.MasterSlaveEntry.nextPubSubConnection(MasterSlaveEntry.java:571)
+	at org.redisson.pubsub.PublishSubscribeService.nextPubSubConnection(PublishSubscribeService.java:367)
+	at org.redisson.pubsub.PublishSubscribeService.connect(PublishSubscribeService.java:374)
+	at org.redisson.pubsub.PublishSubscribeService.lambda$subscribeNoTimeout$11(PublishSubscribeService.java:272)
+	at org.redisson.pubsub.AsyncSemaphore.lambda$acquire$0(AsyncSemaphore.java:67)
+	at java.base/java.util.concurrent.CompletableFuture.uniAcceptNow(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.uniAcceptStage(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.thenAccept(Unknown Source)
+	at org.redisson.pubsub.AsyncSemaphore.acquire(AsyncSemaphore.java:67)
+	at org.redisson.pubsub.PublishSubscribeService.subscribeNoTimeout(PublishSubscribeService.java:258)
+	at org.redisson.pubsub.PublishSubscribeService.subscribeNoTimeout(PublishSubscribeService.java:212)
+	at org.redisson.pubsub.PublishSubscribe.lambda$subscribe$6(PublishSubscribe.java:1AA)
+	at org.redisson.pubsub.AsyncSemaphore.lambda$acquire$0(AsyncSemaphore.java:67)
+	at java.base/java.util.concurrent.CompletableFuture.uniAcceptNow(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.uniAcceptStage(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.thenAccept(Unknown Source)
+	at org.redisson.pubsub.AsyncSemaphore.acquire(AsyncSemaphore.java:67)
+	at org.redisson.pubsub.PublishSubscribe.subscribe(PublishSubscribe.java:72)
+	at org.redisson.pubsub.LockPubSub.subscribe(LockPubSub.java:27)
+	at org.redisson.RedissonLock.subscribe(RedissonLock.java:291)
+	at org.redisson.RedissonLock.lambda$lockAsync$4(RedissonLock.java:396)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.complete(Unknown Source)
+	at org.redisson.command.CommandBatchService.lambda$executeAsync$7(CommandBatchService.java:322)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.complete(Unknown Source)
+	at org.redisson.command.RedisCommonBatchExecutor.handleResult(RedisCommonBatchExecutor.java:162)
+	at org.redisson.command.RedisExecutor.checkAttemptPromise(RedisExecutor.java:470)
+	at org.redisson.command.RedisExecutor.lambda$execute$3(RedisExecutor.java:171)
+	at java.base/java.util.concurrent.CompletableFuture.uniWhenComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture$UniWhenComplete.tryFire(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.postComplete(Unknown Source)
+	at java.base/java.util.concurrent.CompletableFuture.complete(Unknown Source)
+	at org.redisson.client.handler.CommandDecoder.decodeCommandBatch(CommandDecoder.java:318)
+	at org.redisson.client.handler.CommandDecoder.decodeCommand(CommandDecoder.java:2AA)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:137)
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:113)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:501)
+	at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:366)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.handler.ssl.SslHandler.unwrap(SslHandler.java:1526)
+	at io.netty.handler.ssl.SslHandler.decodeJdkCompatible(SslHandler.java:1275)
+	at io.netty.handler.ssl.SslHandler.decode(SslHandler.java:1322)
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:501)
+	at io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:440)
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:276)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357)
+	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:14AA)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379)
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365)
+	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919)
+	at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:163)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:714)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:650)
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:576)
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:493)
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:989)
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Unknown Source)
+```
+As for me issue looks like issue https://github.com/redisson/redisson/issues/4494 but I have not so much experience in Redisson library to say it definitely.
+
+**Redis version**
+4.0.14
+**Redisson version**
+3.17.5
+
+**Redisson configuration**
+    sentinelServersConfig:
+      idleConnectionTimeout: 10000
+      connectTimeout: 15000
+      pingConnectionInterval: 5000
+      tcpNoDelay: true
+      keepAlive: true
+      timeout: 3000
+      retryAttempts: 3
+      retryInterval: 1500
+      failedSlaveReconnectionInterval: 3000
+      failedSlaveCheckInterval: 60000
+      subscriptionsPerConnection: 5
+      clientName: null
+      loadBalancer: !<org.redisson.connection.balancer.RoundRobinLoadBalancer> {}
+      subscriptionConnectionMinimumIdleSize: 1
+      subscriptionConnectionPoolSize: 50
+      slaveConnectionMinimumIdleSize: 24
+      slaveConnectionPoolSize: 64
+      masterConnectionMinimumIdleSize: 24
+      masterConnectionPoolSize: 64
+      readMode: "MASTER"
+      subscriptionMode: "SLAVE"
+      database: 0
+      checkSentinelsList: false
+      dnsMonitoringInterval: 5000
+    threads: 16
+    nettyThreads: 16
+    codec: !<org.redisson.client.codec.StringCodec> {}
+    transportMode: "NIO"

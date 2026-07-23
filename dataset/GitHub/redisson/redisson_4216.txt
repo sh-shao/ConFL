@@ -1,0 +1,45 @@
+Unable to acquire subscription lock
+During relatively high load (~150-250 requests per minute), I often see this error
+
+```
+Caused by: org.redisson.client.RedisTimeoutException: Unable to acquire subscription lock after 3000ms. Increase 'subscriptionsPerConnection' and/or 'subscriptionConnectionPoolSize' parameters.
+	at org.redisson.pubsub.PublishSubscribe.lambda$subscribe$2(PublishSubscribe.java:69)
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.run(HashedWheelTimer.java:715)
+	at io.netty.util.concurrent.ImmediateExecutor.execute(ImmediateExecutor.java:34)
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.expire(HashedWheelTimer.java:703)
+	at io.netty.util.HashedWheelTimer$HashedWheelBucket.expireTimeouts(HashedWheelTimer.java:790)
+	at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:503)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:833)
+```
+I doubled the `subscriptionsPerConnection` from 5 to 10, the `subscriptionConnectionPoolSize` from 50 to 100, and the `connectionPoolSize` from 64 to 128, but it doesn't seem to have helped.
+
+How can I go about diagnosing/debugging this? Do I need to just keep increasing these parameters till it works?
+
+**Redis version**
+
+6.x
+
+**Redisson version**
+
+3.16.8
+
+**Redisson configuration**
+
+```kotlin
+config.useSingleServer().apply {
+    path.toIntOrNull()?.also {
+        database = it
+    } ?: run {
+        logger.warn { "Unable to parse database number: $path from redis configuration" }
+    }
+    
+    subscriptionsPerConnection = 10
+    subscriptionConnectionPoolSize = 100
+    connectionPoolSize = 128
+    timeout = 6000
+}
+config.nettyThreads = 64
+```
+
+I have also tried using Redisson versions 12.0, 13.0, 14.0, 15.0, 16.0 and 17.0 without luck.

@@ -1,0 +1,127 @@
+[Bug] Deadlock in PersistentSubscription.close / NamespaceService.unloadNamespaceBundle / PulsarService.closeAsync countered in tests
+### Search before asking
+
+- [x] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Read release policy
+
+- [x] I understand that unsupported versions don't get bug fixes. I will attempt to reproduce the issue on a supported version of Pulsar client and Pulsar broker.
+
+
+### Version
+
+master branch
+
+### Minimal reproduce step
+
+No steps to reproduce, faced in tests
+```
+Found one Java-level deadlock:
+=============================
+"main":
+  waiting to lock monitor 0x00007fd520fe6f10 (object 0x000010003425f350, a org.apache.pulsar.broker.service.persistent.PersistentSubscrip
+tion),
+  which is held by "PulsarTestContext-executor-OrderedExecutor-0-0"
+
+"PulsarTestContext-executor-OrderedExecutor-0-0":
+  waiting to lock monitor 0x00007fd4f400dd00 (object 0x000010003425fd70, a org.apache.pulsar.broker.service.persistent.PersistentDispatch
+erSingleActiveConsumer),
+  which is held by "broker-topic-workers-OrderedExecutor-0-0"
+
+"broker-topic-workers-OrderedExecutor-0-0":
+  waiting to lock monitor 0x00007fd7a406f4a0 (object 0x000010003427f678, a org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager$PendingRead),
+  which is held by "PulsarTestContext-executor-OrderedExecutor-0-0"
+
+Java stack information for the threads listed above:
+===================================================
+"main":
+	at org.apache.pulsar.broker.service.persistent.PersistentSubscription.close(PersistentSubscription.java)
+	- waiting to lock <0x000010003425f350> (a org.apache.pulsar.broker.service.persistent.PersistentSubscription)
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.lambda$close$56(PersistentTopic.java:1697)
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic$$Lambda/0x00007fd54cb397a8.accept(Unknown Source)
+	at java.util.concurrent.ConcurrentHashMap.forEach(java.base@21.0.6/ConcurrentHashMap.java:1603)
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.lambda$close$57(PersistentTopic.java:1697)
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic$$Lambda/0x00007fd54cb39358.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniAcceptNow(java.base@21.0.6/CompletableFuture.java:757)
+	at java.util.concurrent.CompletableFuture.uniAcceptStage(java.base@21.0.6/CompletableFuture.java:735)
+	at java.util.concurrent.CompletableFuture.thenAccept(java.base@21.0.6/CompletableFuture.java:2214)
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.close(PersistentTopic.java:1688)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$unloadServiceUnit$116(BrokerService.java:2371)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda/0x00007fd54cb76aa8.apply(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniComposeStage(java.base@21.0.6/CompletableFuture.java:1187)
+	at java.util.concurrent.CompletableFuture.thenCompose(java.base@21.0.6/CompletableFuture.java:2341)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$unloadServiceUnit$118(BrokerService.java:2371)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda/0x00007fd54cb6f800.accept(Unknown Source)
+	at java.util.concurrent.ConcurrentHashMap.forEach(java.base@21.0.6/ConcurrentHashMap.java:1603)
+	at org.apache.pulsar.broker.service.BrokerService.unloadServiceUnit(BrokerService.java:2341)
+	at org.apache.pulsar.broker.service.BrokerService.unloadServiceUnit(BrokerService.java:2314)
+	at org.apache.pulsar.broker.namespace.OwnedBundle.lambda$handleUnloadRequest$0(OwnedBundle.java:138)
+	at org.apache.pulsar.broker.namespace.OwnedBundle$$Lambda/0x00007fd54cb6f5c8.apply(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniComposeStage(java.base@21.0.6/CompletableFuture.java:1187)
+	at java.util.concurrent.CompletableFuture.thenCompose(java.base@21.0.6/CompletableFuture.java:2341)
+	at org.apache.pulsar.broker.namespace.OwnedBundle.handleUnloadRequest(OwnedBundle.java:138)
+	at org.apache.pulsar.broker.namespace.NamespaceService.unloadNamespaceBundle(NamespaceService.java:848)
+...
+	at org.apache.pulsar.broker.namespace.NamespaceService.unloadNamespaceBundle(NamespaceService.java:839)
+...
+	at org.apache.pulsar.broker.namespace.NamespaceService.unloadNamespaceBundle(NamespaceService.java:830)
+	at org.apache.pulsar.broker.service.BrokerService.lambda$unloadNamespaceBundlesGracefully$30(BrokerService.java:999)
+	at org.apache.pulsar.broker.service.BrokerService$$Lambda/0x00007fd54cb6ef58.accept(Unknown Source)
+	at java.lang.Iterable.forEach(java.base@21.0.6/Iterable.java:75)
+	at org.apache.pulsar.broker.service.BrokerService.unloadNamespaceBundlesGracefully(BrokerService.java:992)
+	at org.apache.pulsar.broker.service.BrokerService.unloadNamespaceBundlesGracefully(BrokerService.java:962)
+	at org.apache.pulsar.broker.PulsarService.closeAsync(PulsarService.java:525)
+...
+	at org.apache.pulsar.broker.PulsarService.closeAsync(PulsarService.java:509)
+	at org.apache.pulsar.broker.PulsarService.close(PulsarService.java:484)
+...
+
+
+"PulsarTestContext-executor-OrderedExecutor-0-0":
+	at org.apache.pulsar.broker.service.AbstractDispatcherSingleActiveConsumer.disconnectActiveConsumers(AbstractDispatcherSingleActiveConsumer.java)
+	- waiting to lock <0x000010003425fd70> (a org.apache.pulsar.broker.service.persistent.PersistentDispatcherSingleActiveConsumer)
+	at org.apache.pulsar.broker.service.persistent.PersistentSubscription.resetCursor(PersistentSubscription.java:856)
+	- locked <0x000010003425f350> (a org.apache.pulsar.broker.service.persistent.PersistentSubscription)
+	at org.apache.pulsar.broker.service.persistent.PersistentSubscription$6.findEntryComplete(PersistentSubscription.java:824)
+	at org.apache.pulsar.broker.service.persistent.PersistentMessageFinder.findEntryComplete(PersistentMessageFinder.java:162)
+	at org.apache.bookkeeper.mledger.impl.OpFindNewest.readEntryComplete(OpFindNewest.java:133)
+	at org.apache.bookkeeper.mledger.impl.cache.RangeEntryCacheImpl$1.readEntriesComplete(RangeEntryCacheImpl.java:241)
+	at org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager$PendingRead.readEntriesComplete(PendingReadsManager.java:253)
+	- locked <0x000010003427f678> (a org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager$PendingRead)
+	at org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager$PendingRead.lambda$attach$0(PendingReadsManager.java:232)
+	at org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager$PendingRead$$Lambda/0x00007fd54cb0fc60.run(Unknown Source)
+	at org.apache.bookkeeper.common.util.SingleThreadExecutor.safeRunTask(SingleThreadExecutor.java:137)
+	at org.apache.bookkeeper.common.util.SingleThreadExecutor.run(SingleThreadExecutor.java:107)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.runWith(java.base@21.0.6/Thread.java:1596)
+	at java.lang.Thread.run(java.base@21.0.6/Thread.java:1583)
+"broker-topic-workers-OrderedExecutor-0-0":
+	at org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager$PendingRead.addListener(PendingReadsManager.java)
+	- waiting to lock <0x000010003427f678> (a org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager$PendingRead)
+	at org.apache.bookkeeper.mledger.impl.cache.PendingReadsManager.readEntries(PendingReadsManager.java:430)
+...
+	at org.apache.pulsar.broker.service.persistent.PersistentDispatcherSingleActiveConsumer.readMoreEntries(PersistentDispatcherSingleActiveConsumer.java:387)
+	- locked <0x000010003425fd70> (a org.apache.pulsar.broker.service.persistent.PersistentDispatcherSingleActiveConsumer)
+...
+```
+full dead lock details: https://gist.github.com/lhotari/135bb1a5a045d00c19cf374fca1ff8f7#file-threaddump15633_2025-02-08_00-txt-L1327-L1542
+full thread dump: https://gist.github.com/lhotari/135bb1a5a045d00c19cf374fca1ff8f7
+analysis: https://jstack.review/?https://gist.github.com/lhotari/135bb1a5a045d00c19cf374fca1ff8f7
+
+
+### What did you expect to see?
+
+no deadlocks
+
+### What did you see instead?
+
+there was a deadlock in closing PulsarService
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

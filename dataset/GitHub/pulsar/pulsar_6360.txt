@@ -1,0 +1,25 @@
+There is at least one place where sendAsync does not release the semaphore
+**Describe the bug**
+
+If an error occurs that completes the future without releasing the semaphore then the calling thread may block forever.
+
+https://github.com/apache/pulsar/blob/master/pulsar-client/src/main/java/org/apache/pulsar/client/impl/ProducerImpl.java#L354
+
+There may be another case with timeout that tickles this but that's harder to reproduce
+
+**To Reproduce**
+Steps to reproduce the behavior:
+
+Send a bunch of large messages asynchronously; hang
+
+**Expected behavior**
+Any failure path should release the semaphore before returning.
+
+**Screenshots**
+If applicable, add screenshots to help explain your problem.
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+
+**Additional context**
+Add any other context about the problem here.

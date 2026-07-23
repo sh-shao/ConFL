@@ -1,0 +1,7 @@
+HttpClient race condition when getting a connection from the pool being closed
+Currently there is a race condition with the `HttpClient` between a client request and a connection close. The pool delivers the client request in the next tick and the connection might be removed from the pool between this the schedule and the delivery. At this moment the client does not know the connection was closed and is never aware of the connection close.
+
+We should avoid a next tick in this situation, i.e when the client request is fulfilled with a valid connection, it should be called immediately to avoid the race.
+
+Currently the fact that the connection pool can hold connections with multiples context does not allow to run the pool requests on the pool and thus the situation is hard to avoid without a re-check before the connection is delivered. A better solution might be to attach a vertx context on the pool and consider all connections will use the same context, this would allow to eliminate the race easily.
+

@@ -1,0 +1,2 @@
+Query hangs due to missed TaskSource update in Driver
+Driver can leave source updates stuck in newSources forever.  This hangs the query since the task will never see the "noMoreSplits" message.  I believe this is caused by a race where a TaskSource is added between the call to processNewSources and the unlock in DriverLockResult.close().  The TaskSource gets queued in newSources, but can not get the lock because is is held.  The state machine design is flawed and will need to be redesigned.

@@ -1,0 +1,84 @@
+RedissonFairLock deadlock
+**version:**
+spring-boot : 2.2.2
+redisson-spring-boot-starter: 3.12.1
+redis: 4.0.10
+
+**test case**
+
+```
+    @GetMapping("/testRedisson")
+    public void testRedisson() {
+        String s = UUID.randomUUID().toString();
+        ExecutorService executorService = new ThreadPoolExecutor(0, Integer.MAX_VALUE,
+                1000L, TimeUnit.SECONDS,
+                new SynchronousQueue<Runnable>());
+        log.info("startLock ");
+        IntStream.rangeClosed(0, 500).boxed().forEach(new Consumer<Integer>() {
+            @Override
+            public void accept(Integer integer) {
+                executorService.submit(new Runnable() {
+                    @Override
+                    public void run() {
+
+                        RLock test = redissonClient.getFairLock(s);
+                        test.lock(5, TimeUnit.SECONDS);
+                        ThreadUtil.sleep(200); // 200ms
+                        log.info("endLok {}", integer);
+                        test.unlock();
+                    }
+                });
+            }
+        });
+        executorService.shutdown();
+
+    }
+```
+**RedissonFairLock result**
+Only more than 100 "endLok" were printed。if use RedissonLock，it can be print all。 
+ 
+redis has key "redisson_lock_queue:{4e6cbfe2-1dc0-4956-bec3-ba9aaf16f63e}" and  "redisson_lock_timeout:{4e6cbfe2-1dc0-4956-bec3-ba9aaf16f63e}" Blocking program running
+
+```
+127.0.0.1:6379> LRANGE redisson_lock_queue:{4e6cbfe2-1dc0-4956-bec3-ba9aaf16f63e} 0 10
+ 1) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1123"
+ 2) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1124"
+ 3) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1125"
+ 4) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1126"
+ 5) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1127"
+ 6) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1128"
+ 7) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1129"
+ 8) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1130"
+ 9) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1131"
+10) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1132"
+11) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1134"
+```
+
+```
+127.0.0.1:6379> ZRANGE redisson_lock_timeout:{4e6cbfe2-1dc0-4956-bec3-ba9aaf16f63e} 0 258 WITHSCORES
+  1) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1186"
+  2) "1593669091698"
+  3) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1188"
+  4) "1593669096698"
+  5) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1191"
+  6) "1593669101698"
+  7) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1187"
+  8) "1593669106698"
+  9) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1189"
+ 10) "1593669111698"
+ 11) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1190"
+ 12) "1593669116698"
+ 13) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1192"
+ 14) "1593669121698"
+ 15) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1193"
+ 16) "1593669126698"
+ 17) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1194"
+ 18) "1593669131698"
+ 19) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1195"
+ 20) "1593669136698"
+ 21) "19df2c25-acc0-42c1-b1a3-9f6f2f41e401:1196"
+ 22) "1593669141698"
+```
+
+
+

@@ -1,0 +1,19 @@
+Long latency issue while call Redis.
+I use Redisson 2.2.10 to implement distributed lock in my project. And then I run load test for this distributed lock using SINGLE redis mode. But I found there are many long latency APIs and it's wired that almost all the long latency APIs are a little greater than 1000ms. The average latency and 99 percent latecy is about 15ms and 30ms respectively. And then I used `jstack` to get the call stack and found most of the threads are WAITING at the same place just as the following
+
+```
+"Processor-35" prio=10 tid=0x00007f61900e3800 nid=0x2614 in Object.wait() [0x00007f61027e5000]
+ java.lang.Thread.State: WAITING (on object monitor)
+       at java.lang.Object.wait(Native Method)
+       at java.lang.Object.wait(Object.java:503)
+       at io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly(DefaultPromise.java:286)
+       - locked <0x0000000600aa3e50> (a io.netty.util.concurrent.DefaultPromise)
+       at io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly(DefaultPromise.java:32)
+       at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:84)
+       at org.redisson.RedissonObject.get(RedissonObject.java:49)
+       at org.redisson.RedissonLock.tryAcquire(RedissonLock.java:139)
+       at org.redisson.RedissonLock.tryLock(RedissonLock.java:225)
+       at com.mytest.lock.impl.redis.BaseRedisLockClientImpl.tryLock(BaseRedisLockClientImpl.java:72)
+```
+
+Meanwhile, during the test, I dumped the network packages using `tcpdump` and found that it took about 1000ms before the first package was sent to Redis. And in Redis server, I didn't find any slow query whose latency is more than 10ms. So I think, for the long latency API, most of the time might be cost in the project not the network. So can you help me to have a check or give me some suggestion about this issue?  Many thanks.

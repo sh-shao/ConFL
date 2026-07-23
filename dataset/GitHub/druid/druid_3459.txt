@@ -1,0 +1,114 @@
+Deadlock in global lookup cache
+Had an issue with a query node which ended up reporting a deadlock on `kill -3` I'm still investigating and intend to make sure https://github.com/druid-io/druid/pull/3071 avoids this case.
+
+```
+Found one Java-level deadlock:
+=============================
+"NamespaceExtractionCacheManager-0":
+  waiting for ownable synchronizer 0x00000004c42eaba8, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "topN_REDACTED_[2016-09-01T15:00:00.000Z/2016-09-01T16:00:00.000Z]"
+"topN_REDACTED_[2016-09-01T15:00:00.000Z/2016-09-01T16:00:00.000Z]":
+  waiting for ownable synchronizer 0x00000004c42eacc8, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "topN_REDACTED_[2016-09-01T15:00:00.000Z/2016-09-01T16:00:00.000Z]"
+"topN_REDACTED_[2016-09-01T15:00:00.000Z/2016-09-01T16:00:00.000Z]":
+  waiting for ownable synchronizer 0x00000004c42eaba8, (a java.util.concurrent.locks.ReentrantLock$NonfairSync),
+  which is held by "topN_REDACTED_[2016-09-01T15:00:00.000Z/2016-09-01T16:00:00.000Z]"
+
+Java stack information for the threads listed above:
+===================================================
+"NamespaceExtractionCacheManager-0":
+        at sun.misc.Unsafe.park(Native Method)
+        - parking to wait for  <0x00000004c42eaba8> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+        at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+        at java.util.concurrent.locks.ReentrantLock$NonfairSync.lock(ReentrantLock.java:209)
+        at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:285)
+        at io.druid.server.lookup.namespace.cache.OffHeapNamespaceExtractionCacheManager.swapAndClearCache(OffHeapNamespaceExtractionCacheManager.java:112)
+        at io.druid.server.lookup.namespace.cache.NamespaceExtractionCacheManager$2.run(NamespaceExtractionCacheManager.java:173)
+        - locked <0x00000004c42c11a8> (a java.util.concurrent.atomic.AtomicBoolean)
+        at io.druid.server.lookup.namespace.cache.NamespaceExtractionCacheManager$4.run(NamespaceExtractionCacheManager.java:368)
+        at com.google.common.util.concurrent.MoreExecutors$ScheduledListeningDecorator$NeverSuccessfulListenableFutureTask.run(MoreExecutors.java:582)
+        at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+        at java.util.concurrent.FutureTask.runAndReset(FutureTask.java:308)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$301(ScheduledThreadPoolExecutor.java:180)
+        at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:294)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+        at java.lang.Thread.run(Thread.java:745)
+"topN_REDACTED_[2016-09-01T15:00:00.000Z/2016-09-01T16:00:00.000Z]":
+        at sun.misc.Unsafe.park(Native Method)
+        - parking to wait for  <0x00000004c42eacc8> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+        at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+        at java.util.concurrent.locks.ReentrantLock$NonfairSync.lock(ReentrantLock.java:209)
+        at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:285)
+        at io.druid.server.lookup.namespace.cache.OffHeapNamespaceExtractionCacheManager.getCacheMap(OffHeapNamespaceExtractionCacheManager.java:170)
+        at io.druid.query.lookup.NamespaceLookupExtractorFactory.get(NamespaceLookupExtractorFactory.java:270)
+        at io.druid.query.lookup.NamespaceLookupExtractorFactory.get(NamespaceLookupExtractorFactory.java:50)
+        at io.druid.query.lookup.RegisteredLookupExtractionFn.ensureDelegate(RegisteredLookupExtractionFn.java:142)
+        - locked <0x00000005f4d39248> (a java.lang.Object)
+        at io.druid.query.lookup.RegisteredLookupExtractionFn.getCacheKey(RegisteredLookupExtractionFn.java:97)
+        at io.druid.query.dimension.ExtractionDimensionSpec.getCacheKey(ExtractionDimensionSpec.java:96)
+        at io.druid.query.topn.TopNQueryQueryToolChest$7.computeCacheKey(TopNQueryQueryToolChest.java:309)
+        at io.druid.query.topn.TopNQueryQueryToolChest$7.computeCacheKey(TopNQueryQueryToolChest.java:298)
+        at io.druid.client.CachingQueryRunner.run(CachingQueryRunner.java:103)
+        at io.druid.query.BySegmentQueryRunner.run(BySegmentQueryRunner.java:70)
+        at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:118)
+        at io.druid.query.spec.SpecificSegmentQueryRunner$2$1.call(SpecificSegmentQueryRunner.java:87)
+        at io.druid.query.spec.SpecificSegmentQueryRunner.doNamed(SpecificSegmentQueryRunner.java:171)
+        at io.druid.query.spec.SpecificSegmentQueryRunner.access$400(SpecificSegmentQueryRunner.java:41)
+        at io.druid.query.spec.SpecificSegmentQueryRunner$2.doItNamed(SpecificSegmentQueryRunner.java:162)
+        at io.druid.query.spec.SpecificSegmentQueryRunner$2.accumulate(SpecificSegmentQueryRunner.java:80)
+        at io.druid.query.CPUTimeMetricQueryRunner$1.accumulate(CPUTimeMetricQueryRunner.java:81)
+        at com.metamx.common.guava.Sequences$1.accumulate(Sequences.java:90)
+        at com.metamx.common.guava.Sequences.toList(Sequences.java:113)
+        at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129)
+        at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119)
+        at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+        at io.druid.query.PrioritizedListenableFutureTask.run(PrioritizedExecutorService.java:271)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+        at java.lang.Thread.run(Thread.java:745)
+"topN_REDACTED_[2016-09-01T15:00:00.000Z/2016-09-01T16:00:00.000Z]":
+        at sun.misc.Unsafe.park(Native Method)
+        - parking to wait for  <0x00000004c42eaba8> (a java.util.concurrent.locks.ReentrantLock$NonfairSync)
+        at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireQueued(AbstractQueuedSynchronizer.java:870)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(AbstractQueuedSynchronizer.java:1199)
+        at java.util.concurrent.locks.ReentrantLock$NonfairSync.lock(ReentrantLock.java:209)
+        at java.util.concurrent.locks.ReentrantLock.lock(ReentrantLock.java:285)
+        at io.druid.server.lookup.namespace.cache.OffHeapNamespaceExtractionCacheManager.getCacheMap(OffHeapNamespaceExtractionCacheManager.java:170)
+        at io.druid.query.lookup.NamespaceLookupExtractorFactory.get(NamespaceLookupExtractorFactory.java:270)
+        at io.druid.query.lookup.NamespaceLookupExtractorFactory.get(NamespaceLookupExtractorFactory.java:50)
+        at io.druid.query.lookup.RegisteredLookupExtractionFn.ensureDelegate(RegisteredLookupExtractionFn.java:142)
+        - locked <0x00000005f4d35518> (a java.lang.Object)
+        at io.druid.query.lookup.RegisteredLookupExtractionFn.getCacheKey(RegisteredLookupExtractionFn.java:97)
+        at io.druid.query.dimension.ExtractionDimensionSpec.getCacheKey(ExtractionDimensionSpec.java:96)
+        at io.druid.query.topn.TopNQueryQueryToolChest$7.computeCacheKey(TopNQueryQueryToolChest.java:309)
+        at io.druid.query.topn.TopNQueryQueryToolChest$7.computeCacheKey(TopNQueryQueryToolChest.java:298)
+        at io.druid.client.CachingQueryRunner.run(CachingQueryRunner.java:103)
+        at io.druid.query.BySegmentQueryRunner.run(BySegmentQueryRunner.java:70)
+        at io.druid.query.MetricsEmittingQueryRunner$1.accumulate(MetricsEmittingQueryRunner.java:118)
+        at io.druid.query.spec.SpecificSegmentQueryRunner$2$1.call(SpecificSegmentQueryRunner.java:87)
+        at io.druid.query.spec.SpecificSegmentQueryRunner.doNamed(SpecificSegmentQueryRunner.java:171)
+        at io.druid.query.spec.SpecificSegmentQueryRunner.access$400(SpecificSegmentQueryRunner.java:41)
+        at io.druid.query.spec.SpecificSegmentQueryRunner$2.doItNamed(SpecificSegmentQueryRunner.java:162)
+        at io.druid.query.spec.SpecificSegmentQueryRunner$2.accumulate(SpecificSegmentQueryRunner.java:80)
+        at io.druid.query.CPUTimeMetricQueryRunner$1.accumulate(CPUTimeMetricQueryRunner.java:81)
+        at com.metamx.common.guava.Sequences$1.accumulate(Sequences.java:90)
+        at com.metamx.common.guava.Sequences.toList(Sequences.java:113)
+        at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:129)
+        at io.druid.query.ChainedExecutionQueryRunner$1$1$1.call(ChainedExecutionQueryRunner.java:119)
+        at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+        at io.druid.query.PrioritizedListenableFutureTask.run(PrioritizedExecutorService.java:271)
+        at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+        at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+        at java.lang.Thread.run(Thread.java:745)
+
+Found 1 deadlock.
+```

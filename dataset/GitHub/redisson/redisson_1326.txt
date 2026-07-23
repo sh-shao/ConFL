@@ -1,0 +1,11 @@
+Redisson 3.5.7 memory leak with locks
+I'm using RLock and seeing memory leak via org.redisson.client.handler.CommandPubSubDecoder 
+ 
+![image](https://user-images.githubusercontent.com/443442/37062360-0f201f60-214b-11e8-81a2-d2fab78261c4.png)
+
+
+Retained objects delta between heap dumps taken apart
+![image 1](https://user-images.githubusercontent.com/443442/37062341-01519f12-214b-11e8-8d35-4bc50413fd50.png)
+
+Around 10MB leak per day
+![image 2](https://user-images.githubusercontent.com/443442/37062443-5150dfdc-214b-11e8-944f-fb46ec393693.png)

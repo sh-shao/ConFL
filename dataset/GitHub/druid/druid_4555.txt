@@ -1,0 +1,2 @@
+Bug in CoordinatorDynamicConfig
+https://github.com/druid-io/druid/pull/4141 added watcher to be added as part of CoordinatorDynamicConfig construction which can lead to a deadlock in ConfigManager due to single threaded "exec" pool in ConfigManager.

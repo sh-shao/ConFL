@@ -1,0 +1,95 @@
+Thread gets stuck when trying to acquire lock via tryLock()
+**Expected behavior**
+The thread should get release i.e tryLock should return false
+
+**Actual behavior**
+Thread gets stuck in Waiting state
+
+**Steps to reproduce or test case**
+This is how we are calling the tryLock and multiple threads are scheduled to call this. 
+Some threads gets stuck at the Waiting state at tryLock. 
+**This is observed when the shards are being added (Sharding is In Progress state).**  After sharding is done then Restarting the application releases the threads.
+`
+     
+      RLock lock = redissonClient.getLock("KEY");
+      try {
+        if (lock.tryLock(0, 5, MINUTES)) { // NOSONAR
+          orgsToUpdate.remove(firstOrgId);
+          return new OrgToUpdate(firstOrgId, lock);
+        }
+        
+      } catch (final InterruptedException e) { 
+        if (lock.isHeldByCurrentThread()) {
+          lock.unlock();
+        }
+        return null;
+      }`
+
+
+**Redis version**
+AWS Elastic Cache Engine Version 5.0.5
+**Redisson version**
+3.13.1 and 3.13.2 (Tested on both same issue)
+**Redisson configuration**
+I have tried multiple configurations:
+1. Default Config of 3.13.1
+
+> connectTimeout=10000
+masterConnectionPoolSize=64
+slaveConnectionPoolSize=64
+subscriptionConnectionPoolSize=50
+retryAttempts=3
+masterConnectionMinimumIdleSize=24
+slaveConnectionMinimumIdleSize=24
+subscriptionConnectionMinimumIdleSize=1
+nettyThreads=32
+idleConnectionTimeout=10000
+subscriptionsPerConnection=5
+
+2. Custom
+
+> connectTimeout=20000
+masterConnectionPoolSize=128
+slaveConnectionPoolSize=128
+subscriptionConnectionPoolSize=128
+retryAttempts=5
+masterConnectionMinimumIdleSize=128
+slaveConnectionMinimumIdleSize=128
+subscriptionConnectionMinimumIdleSize=128
+nettyThreads=64
+idleConnectionTimeout=10000
+subscriptionsPerConnection=50
+
+
+Thread Dump:
+
+> "cron-thread-8" 142 prio=5 os_prio=0 cpu=53374.16ms elapsed=65618.51s tid=0x00007fc22dfc0800 nid=0x249b in Object.wait()  [0x00007fc0ad4da000]                                         
+   java.lang.Thread.State: WAITING (on object monitor)                                                                                                                                  
+        at java.lang.Object.wait(java.base@11.0.3/Native Method)                                                                                                                        
+        - waiting on <no object reference available>                                                                                                                                    
+        at java.lang.Object.wait(java.base@11.0.3/Object.java:328)                                                                                                                      
+        at io.netty.util.concurrent.DefaultPromise.await(DefaultPromise.java:218)                                                                                                       
+        - waiting to re-lock in wait() <0x00000000abbdba00> (a io.netty.util.concurrent.ImmediateEventExecutor$ImmediatePromise)                                                        
+        at org.redisson.misc.RedissonPromise.await(RedissonPromise.java:110)                                                                                                            
+        at org.redisson.misc.RedissonPromise.await(RedissonPromise.java:35)                                                                                                             
+        at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:139)                                                                                                   
+        at org.redisson.RedissonObject.get(RedissonObject.java:90)                                                                                                                      
+        at org.redisson.RedissonLock.tryAcquire(RedissonLock.java:221)                                                                                                                  
+        at org.redisson.RedissonLock.tryLock(RedissonLock.java:394)                                                                                                                     
+        at com.adobe.quotaservice.redis.QuotaUpdateCache.findOrgToUpdate(QuotaUpdateCache.java:343)                                                                                     
+        at com.adobe.quotaservice.redis.QuotaUpdateCache.findOrgToUpdateAndUpdate(QuotaUpdateCache.java:196)                                                                            
+        at com.adobe.quotaservice.redis.QuotaUpdateCache$$FastClassBySpringCGLIB$$2b64b1f9.invoke(<generated>)                                                                          
+        at org.springframework.cglib.proxy.MethodProxy.invoke(MethodProxy.java:218)                                                                                                     
+        at org.springframework.aop.framework.CglibAopProxy$CglibMethodInvocation.invokeJoinpoint(CglibAopProxy.java:750)                                                                
+        at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:163)                                                                    
+        at org.springframework.aop.aspectj.MethodInvocationProceedingJoinPoint.proceed(MethodInvocationProceedingJoinPoint.java:88)                                                     
+        at com.adobesc.monitoring.transaction.log.LogTransactionAspect.transactionPointcut(LogTransactionAspect.java:82)                                                                
+        at jdk.internal.reflect.GeneratedMethodAccessor138.invoke(Unknown Source)                                                                                                       
+        at jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(java.base@11.0.3/DelegatingMethodAccessorImpl.java:43)                                                              
+        at java.lang.reflect.Method.invoke(java.base@11.0.3/Method.java:566)                                                                                                            
+        at org.springframework.aop.aspectj.AbstractAspectJAdvice.invokeAdviceMethodWithGivenArgs(AbstractAspectJAdvice.java:644)                                                        
+        at org.springframework.aop.aspectj.AbstractAspectJAdvice.invokeAdviceMethod(AbstractAspectJAdvice.java:633)                                                                     
+        at org.springframework.aop.aspectj.AspectJAroundAdvice.invoke(AspectJAroundAdvice.java:70)                                                                                      
+        at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:175)                                                                    
+        at org.springframework.aop.interceptor.ExposeInvocationInterceptor.invoke(ExposeInvocationInterceptor.java:93)                                                                  
+        at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:186)    

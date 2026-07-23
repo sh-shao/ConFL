@@ -1,0 +1,2 @@
+Do not lock the handler calls in AsyncFile
+Currently the `AsyncFile` implementation calls the file handlers in a synchronized block. This synchronization is only useful for reading the handler and should not be used when calling them.

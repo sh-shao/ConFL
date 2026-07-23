@@ -1,0 +1,2 @@
+RealtimePlumber: Race between server view callback and merge/push thread
+If you have redundant realtime tasks, a historical node can load a segment pushed by task A while task B is still performing final merging of the segment. In this case, task B's server view callback will see the loaded segment and call abandonSegment. This will unannounce the segment, delete the local files, and release locks in the indexing service (if you are running inside the indexing service). This will cause havoc in the merge/push thread that is still trying to merge the segment.

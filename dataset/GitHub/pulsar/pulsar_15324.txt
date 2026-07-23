@@ -1,0 +1,159 @@
+metadata-store thread sometimes will running too long  and occurs timeout of admin api
+**Describe the bug**
+A clear and concise description of what the bug is.
+
+
+metadata-store is one thread .it should not running too long 
+[auto_jstack.log](https://github.com/apache/pulsar/files/8559588/auto_jstack.log)
+
+
+
+**To Reproduce**
+Steps to reproduce the behavior:
+**Expected behavior**
+A clear and concise description of what you expected to happen.
+
+**Screenshots**
+
+```
+"metadata-store-6-1" #28 prio=5 os_prio=0 tid=0x00007faaf8008000 nid=0x5dde waiting on condition [0x00007fab0ea87000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x000000079e201ad0> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:215)
+	at java.util.concurrent.CompletableFuture$Signaller.block(CompletableFuture.java:1695)
+	at java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3323)
+	at java.util.concurrent.CompletableFuture.timedGet(CompletableFuture.java:1775)
+	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:1915)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.getTopicReference(PersistentTopicsBase.java:3647)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.lambda$internalDeleteSubscriptionForNonPartitionedTopicForcefully$90(PersistentTopicsBase.java:1594)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase$$Lambda$1496/1397152714.apply(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniComposeStage(CompletableFuture.java:981)
+	at java.util.concurrent.CompletableFuture.thenCompose(CompletableFuture.java:2124)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.internalDeleteSubscriptionForNonPartitionedTopicForcefully(PersistentTopicsBase.java:1593)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.lambda$internalDeleteSubscriptionForcefully$87(PersistentTopicsBase.java:1578)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase$$Lambda$1492/961268143.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniAccept(CompletableFuture.java:656)
+	at java.util.concurrent.CompletableFuture$UniAccept.tryFire(CompletableFuture.java:632)
+	at java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:474)
+	at java.util.concurrent.CompletableFuture.complete(CompletableFuture.java:1962)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore.lambda$null$7(ZKMetadataStore.java:158)
+	at org.apache.pulsar.metadata.impl.ZKMetadataStore$$Lambda$120/2040325528.run(Unknown Source)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:748)
+```
+
+it seems
+
+```
+                        future.complete(Optional.empty());  // line 158 in ZKMetadataStore
+
+```
+
+will execute too long
+
+```
+"pulsar-web-38-3" #166 prio=5 os_prio=0 tid=0x00007fad2d841800 nid=0x5e84 waiting on condition [0x00007faae67e8000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x000000079cb56280> (a java.util.concurrent.CompletableFuture$Signaller)
+	at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:215)
+	at java.util.concurrent.CompletableFuture$Signaller.block(CompletableFuture.java:1695)
+	at java.util.concurrent.ForkJoinPool.managedBlock(ForkJoinPool.java:3323)
+	at java.util.concurrent.CompletableFuture.timedGet(CompletableFuture.java:1775)
+	at java.util.concurrent.CompletableFuture.get(CompletableFuture.java:1915)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.getTopicReference(PersistentTopicsBase.java:3647)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.lambda$internalDeleteSubscriptionForNonPartitionedTopicForcefully$90(PersistentTopicsBase.java:1594)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase$$Lambda$1496/1397152714.apply(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniComposeStage(CompletableFuture.java:981)
+	at java.util.concurrent.CompletableFuture.thenCompose(CompletableFuture.java:2124)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.internalDeleteSubscriptionForNonPartitionedTopicForcefully(PersistentTopicsBase.java:1593)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.lambda$internalDeleteSubscriptionForcefully$87(PersistentTopicsBase.java:1578)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase$$Lambda$1492/961268143.accept(Unknown Source)
+	at java.util.concurrent.CompletableFuture.uniAccept(CompletableFuture.java:656)
+	at java.util.concurrent.CompletableFuture.uniAcceptStage(CompletableFuture.java:669)
+	at java.util.concurrent.CompletableFuture.thenAccept(CompletableFuture.java:1997)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.internalDeleteSubscriptionForcefully(PersistentTopicsBase.java:1542)
+	at org.apache.pulsar.broker.admin.impl.PersistentTopicsBase.internalDeleteSubscription(PersistentTopicsBase.java:1416)
+	at org.apache.pulsar.broker.admin.v2.PersistentTopics.deleteSubscription(PersistentTopics.java:1111)
+	at sun.reflect.GeneratedMethodAccessor289.invoke(Unknown Source)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:498)
+	at org.glassfish.jersey.server.model.internal.ResourceMethodInvocationHandlerFactory.lambda$static$0(ResourceMethodInvocationHandlerFactory.java:52)
+	at org.glassfish.jersey.server.model.internal.ResourceMethodInvocationHandlerFactory$$Lambda$370/1929506494.invoke(Unknown Source)
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher$1.run(AbstractJavaResourceMethodDispatcher.java:124)
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher.invoke(AbstractJavaResourceMethodDispatcher.java:167)
+	at org.glassfish.jersey.server.model.internal.JavaResourceMethodDispatcherProvider$VoidOutInvoker.doDispatch(JavaResourceMethodDispatcherProvider.java:159)
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher.dispatch(AbstractJavaResourceMethodDispatcher.java:79)
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.invoke(ResourceMethodInvoker.java:475)
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.apply(ResourceMethodInvoker.java:397)
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.apply(ResourceMethodInvoker.java:81)
+	at org.glassfish.jersey.server.ServerRuntime$1.run(ServerRuntime.java:255)
+	at org.glassfish.jersey.internal.Errors$1.call(Errors.java:248)
+	at org.glassfish.jersey.internal.Errors$1.call(Errors.java:244)
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:292)
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:274)
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:244)
+	at org.glassfish.jersey.process.internal.RequestScope.runInScope(RequestScope.java:265)
+	at org.glassfish.jersey.server.ServerRuntime.process(ServerRuntime.java:234)
+	at org.glassfish.jersey.server.ApplicationHandler.handle(ApplicationHandler.java:680)
+	at org.glassfish.jersey.servlet.WebComponent.serviceImpl(WebComponent.java:394)
+	at org.glassfish.jersey.servlet.WebComponent.service(WebComponent.java:346)
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:366)
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:319)
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:205)
+	at org.eclipse.jetty.servlet.ServletHolder.handle(ServletHolder.java:799)
+	at org.eclipse.jetty.servlet.ServletHandler$ChainEnd.doFilter(ServletHandler.java:1626)
+	at org.apache.pulsar.broker.web.VpcLookupFilter.doFilter(VpcLookupFilter.java:173)
+	at org.eclipse.jetty.servlet.FilterHolder.doFilter(FilterHolder.java:193)
+	at org.eclipse.jetty.servlet.ServletHandler$Chain.doFilter(ServletHandler.java:1601)
+	at org.apache.pulsar.broker.web.ResponseHandlerFilter.doFilter(ResponseHandlerFilter.java:67)
+	at org.eclipse.jetty.servlet.FilterHolder.doFilter(FilterHolder.java:193)
+	at org.eclipse.jetty.servlet.ServletHandler$Chain.doFilter(ServletHandler.java:1601)
+	at org.apache.pulsar.broker.web.AuthenticationFilter.doFilter(AuthenticationFilter.java:84)
+	at org.eclipse.jetty.servlet.FilterHolder.doFilter(FilterHolder.java:193)
+	at org.eclipse.jetty.servlet.ServletHandler$Chain.doFilter(ServletHandler.java:1601)
+	at org.eclipse.jetty.servlet.ServletHandler.doHandle(ServletHandler.java:548)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:233)
+	at org.eclipse.jetty.server.session.SessionHandler.doHandle(SessionHandler.java:1624)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:233)
+	at org.eclipse.jetty.server.handler.ContextHandler.doHandle(ContextHandler.java:1434)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:188)
+	at org.eclipse.jetty.servlet.ServletHandler.doScope(ServletHandler.java:501)
+	at org.eclipse.jetty.server.session.SessionHandler.doScope(SessionHandler.java:1594)
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:186)
+	at org.eclipse.jetty.server.handler.ContextHandler.doScope(ContextHandler.java:1349)
+	at org.eclipse.jetty.server.handler.ScopedHandler.handle(ScopedHandler.java:141)
+	at org.eclipse.jetty.server.handler.ContextHandlerCollection.handle(ContextHandlerCollection.java:234)
+	at org.eclipse.jetty.server.handler.HandlerCollection.handle(HandlerCollection.java:146)
+	at org.eclipse.jetty.server.handler.StatisticsHandler.handle(StatisticsHandler.java:179)
+	at org.eclipse.jetty.server.handler.HandlerWrapper.handle(HandlerWrapper.java:127)
+	at org.eclipse.jetty.server.Server.handle(Server.java:516)
+	at org.eclipse.jetty.server.HttpChannel.lambda$handle$1(HttpChannel.java:388)
+	at org.eclipse.jetty.server.HttpChannel$$Lambda$442/404602752.dispatch(Unknown Source)
+	at org.eclipse.jetty.server.HttpChannel.dispatch(HttpChannel.java:633)
+	at org.eclipse.jetty.server.HttpChannel.handle(HttpChannel.java:380)
+	at org.eclipse.jetty.server.HttpConnection.onFillable(HttpConnection.java:277)
+	at org.eclipse.jetty.io.AbstractConnection$ReadCallback.succeeded(AbstractConnection.java:311)
+	at org.eclipse.jetty.io.FillInterest.fillable(FillInterest.java:105)
+	at org.eclipse.jetty.io.ChannelEndPoint$1.run(ChannelEndPoint.java:104)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.runTask(EatWhatYouKill.java:338)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.doProduce(EatWhatYouKill.java:315)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.tryProduce(EatWhatYouKill.java:173)
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.run(EatWhatYouKill.java:131)
+	at org.eclipse.jetty.util.thread.ReservedThreadExecutor$ReservedThread.run(ReservedThreadExecutor.java:386)
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149)
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.lang.Thread.run(Thread.java:748)
+```
+
+**Desktop (please complete the following information):**
+ - OS: [e.g. iOS]
+
+**Additional context**
+Add any other context about the problem here.
+
+branch 2.9

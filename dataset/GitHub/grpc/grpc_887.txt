@@ -1,0 +1,24 @@
+OkHttp: race between sendCancel and sendFrame.
+If sendCancel is called (by timeout for example) before the stream is started, a following sendFrame will cause a NPE:
+
+```
+java.lang.NullPointerException
+    at io.grpc.okhttp.OkHttpClientStream.sendFrame(OkHttpClientStream.java:197)
+    at io.grpc.internal.AbstractClientStream.internalSendFrame(AbstractClientStream.java:199)
+    at io.grpc.internal.AbstractStream$2.deliverFrame(AbstractStream.java:128)
+    at io.grpc.internal.MessageFramer.commitToSink(MessageFramer.java:297)
+    at io.grpc.internal.MessageFramer.flush(MessageFramer.java:255)
+    at io.grpc.internal.AbstractStream.flush(AbstractStream.java:178)
+    at io.grpc.ClientCallImpl.sendMessage(ClientCallImpl.java:213)
+    at io.grpc.stub.ClientCalls$CallToStreamObserverAdapter.onNext(ClientCalls.java:210)
+    at io.grpc.testing.integration.AbstractTransportTest.timeoutOnSleepingServer(AbstractTransportTest.java:843)
+    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+    at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+    at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+    at java.lang.reflect.Method.invoke(Method.java:606)
+    at org.junit.runners.model.FrameworkMethod$1.runReflectiveCall(FrameworkMethod.java:47)
+    at org.junit.internal.runners.model.ReflectiveCallable.run(ReflectiveCallable.java:12)
+    at org.junit.runners.model.FrameworkMethod.invokeExplosively(FrameworkMethod.java:44)
+    at org.junit.internal.runners.statements.InvokeMethod.evaluate(InvokeMethod.java:17)
+    at org.junit.internal.runners.statements.FailOnTimeout$StatementThread.run(FailOnTimeout.java:74)
+```

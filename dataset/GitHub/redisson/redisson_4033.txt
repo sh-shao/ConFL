@@ -1,0 +1,49 @@
+multilock fail
+
+
+**Expected behavior**
+lock successful
+
+**Actual behavior**
+lock fail when get first lock in multi lock case
+
+
+**Steps to reproduce or test case**
+
+when I set `waitTime=0`in multi lock , it fail, but I set `waitTime=0` in RLock, it success, why?
+
+
+````
+RLock lock1 = client.getLock("lock1");
+RLock lock2 = client.getLock("lock2");
+RLock lock3 = client.getLock("lock3");
+
+RedissonMultiLock lock = new RedissonMultiLock(lock1, lock2, lock3);
+
+boolean flag = lock.tryLock(0,  TimeUnit.SECONDS);
+
+// flag is false
+
+````
+
+then , debug `RedissonMultiLock`,  until `Line 413`
+
+````
+ if (remainTime != -1) {
+      remainTime -= System.currentTimeMillis() - time;  // Here, remainTime is negative, so end the lock flow
+      time = System.currentTimeMillis();
+      if (remainTime <= 0) {
+          unlockInner(acquiredLocks);
+          return false;
+      }
+  }
+````
+I think it is a bug in RedissonMultiLock
+
+**Redis version**
+
+**Redisson version**
+3.16.6
+
+**Redisson configuration**
+single server

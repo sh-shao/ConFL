@@ -1,0 +1,64 @@
+Memory leak inside BlockedThreadChecker (OutOfMemoryError)
+### Version
+4.3.7
+
+### Context
+Your `BlockedThreadChecker#threads` currently causing memory leak
+`WeakHashMap` has weak reference only for **KEYS**
+Debugged that, In your case `Map<Thread, Task> threads` both key and value is **same**  reference. 
+That causing memory leak, preventing gc from taking down keys. (values are not weak referenced)
+
+### Do you have a reproducer?
+Run with next vm options (leaked thread objects are small in size, in our case it took days to reproduce, will be faster on big load):
+`-Xmx10m -XX:-UseGCOverheadLimit`
+overhead disabled to not hide core problem.
+
+```
+public class LeakTest {
+    @Test
+    void test() throws ExecutionException, InterruptedException {
+
+        Vertx vertx = Vertx.vertx();
+
+
+        for (int i = 0; i < 1000000; i++) {
+
+            // deploying verticle
+            List<Future> deployFutures = new ArrayList<>();
+            for (int j = 0; j < 3; j++) {
+                AbstractVerticle verticle = new AbstractVerticle() {
+                };
+                deployFutures.add(vertx.deployVerticle(verticle, new DeploymentOptions()
+                        .setWorker(true)
+                        .setWorkerPoolName("somepool")
+                        .setWorkerPoolSize(3)));
+            }
+
+
+            Future<Void> undeployFuture = CompositeFuture.join(deployFutures)
+                    .compose(compositeFuture -> {
+                        // undeploy deployed verticles
+                        List<Future> undeployFutures = compositeFuture.<String>list()
+                                .stream()
+                                .map(vertx::undeploy)
+                                .collect(Collectors.<Future>toList());
+                        return CompositeFuture.join(undeployFutures)
+                                .mapEmpty();
+
+                    });
+
+
+            // wait for simplicity (verticle 100% stopped)
+            undeployFuture.toCompletionStage().toCompletableFuture().get();
+        }
+    }
+}
+
+```
+
+This test will throw `java.lang.OutOfMemoryError: Java heap space`
+
+### Extra
+Fix I did locally is surround value with WeakReference,
+after that this test will pass.
+`private final Map<Thread, WeakReference<Task>> threads = new WeakHashMap<>();`

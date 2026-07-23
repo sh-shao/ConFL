@@ -1,0 +1,8 @@
+Deadline can fire before stream started
+In [ClientCallImpl](https://github.com/grpc/grpc-java/blob/master/core/src/main/java/io/grpc/internal/ClientCallImpl.java#L249) the deadline is scheduled before `stream.start()`. However, if the deadline has already elapsed the runnable will be executed immediately and race with the `start`. I've only looked into how OkHttp may be impacted.
+
+I believe [a NullPointerException](https://github.com/grpc/grpc-java/blob/master/core/src/main/java/io/grpc/internal/AbstractClientStream.java#L284) would be thrown when trying to notify the stream listener [due to the cancellation](https://github.com/grpc/grpc-java/blob/master/okhttp/src/main/java/io/grpc/okhttp/OkHttpClientStream.java#L259). However, due to #1237 the exception won't be logged. Thus, this will result in a hung stream that never completes with no logging as to what went wrong.
+
+This was discovered due to timeout_on_sleeping_server on android being flaky, because it uses a very small timeout. The test would fail at [awaitCompletion](https://github.com/grpc/grpc-java/blob/master/android-interop-testing/app/src/main/java/io/grpc/android/integrationtest/InteropTester.java#L735).
+
+@carl-mastrangelo, FYI

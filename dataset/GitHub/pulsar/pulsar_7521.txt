@@ -1,0 +1,67 @@
+Pulsar client or IOThread pool got hang after operation timeout triggers
+**Describe the bug**
+Pulsar client or IOThread pool got hang after operation timeout triggers.
+Version: 2.5.0
+
+**To Reproduce**
+Steps to reproduce the behavior:
+```
+public static void main(String[] args) throws Exception {
+        PulsarClient client = PulsarClient.builder()
+                .serviceUrl("pulsar://localhost:6650")
+                .ioThreads(2)
+                .listenerThreads(3)
+                .operationTimeout(2, TimeUnit.MILLISECONDS) // I set this very small so the operation timeout can be triggered
+                .build();
+
+        var ex = Executors.newScheduledThreadPool(1, ThreadFactoryUtil.newThreadFactory("Consumer-Timer"));
+        ex.scheduleWithFixedDelay(() -> createConsumer(client), 2, 3, TimeUnit.SECONDS);
+        System.out.println("args = " + Arrays.deepToString(args));
+        Thread.sleep(50000000);
+    }
+
+    static void createConsumer(PulsarClient client) {
+        System.out.println("Start creating consumer");
+        String topic0 = "public/default/topic0";
+        String topic1 = "public/default/topic1";
+
+        try {
+            var con = client.newConsumer(Schema.STRING)
+                    .subscriptionName("subName")
+                    .topics(List.of(topic0, topic1))
+                    .receiverQueueSize(2)
+                    .subscriptionType(SubscriptionType.Shared)
+                    .ackTimeout(365, TimeUnit.DAYS)
+                    .ackTimeoutTickTime(36, TimeUnit.DAYS)
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .subscribe();
+        } catch (Exception e) {
+            System.out.println("exception = " + Throwables.getStackTraceAsString(e));
+        }
+        System.out.println("Done creating consumer");
+    }`
+
+
+> Start creating consumer
+exception = org.apache.pulsar.client.api.PulsarClientException$TimeoutException: 18 lookup request timedout after ms 2
+	at org.apache.pulsar.client.api.PulsarClientException.unwrap(PulsarClientException.java:667)
+	at org.apache.pulsar.client.impl.ConsumerBuilderImpl.subscribe(ConsumerBuilderImpl.java:97)
+	at com.appen.app.task.service.ConsumerProducer.createConsumer(ConsumerProducer.java:51)
+	at com.appen.app.task.service.ConsumerProducer.lambda$main$0(ConsumerProducer.java:32)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:515)
+	at java.base/java.util.concurrent.FutureTask.runAndReset(FutureTask.java:305)
+	at java.base/java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:305)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628)
+	at java.base/java.lang.Thread.run(Thread.java:834)
+
+Done creating consumer
+Start creating consumer
+```
+
+**The process just hang there forever.**
+And the retry times is equals to the io thread size. I reckon all the io threads are dead. New completableFuture task cannot be executed.
+
+**Expected behavior**
+The new submitted tasks should be executed anyway. If you set the operationTimeout bigger, you can see the pulsarClient keeps creating consumer.
+

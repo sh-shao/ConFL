@@ -1,0 +1,25 @@
+Potential bug in HttpPostEmitter causing high CPU usage
+After upgrading to 0.11.0, some of the deployments are facing high CPU usage issue.
+
+After taking a thread dump, it was a suspicion that emitter thread might be causing it.
+
+```
+Thread 65688: (state = IN_JAVA)
+ - com.metamx.emitter.core.HttpPostEmitter.emitAndReturnBatch(com.metamx.emitter.core.Event) @bci=111, line=249 (Compiled frame; information may be imprecise)
+ - com.metamx.emitter.core.HttpPostEmitter.emit(com.metamx.emitter.core.Event) @bci=2, line=214 (Compiled frame)
+ - com.metamx.emitter.core.ComposingEmitter.emit(com.metamx.emitter.core.Event) @bci=31, line=57 (Compiled frame)
+ - com.metamx.emitter.service.ServiceEmitter.emit(com.metamx.emitter.core.Event) @bci=5, line=72 (Compiled frame)
+ - com.metamx.emitter.service.ServiceEmitter.emit(com.metamx.emitter.service.ServiceEventBuilder) @bci=9, line=77 (Compiled frame)
+```
+
+To verify the issue, we added an executor in DruidCoordinator class which just keeps on emitting events in while(true) loop like this - 
+```
+while (true) {
+   emitter.emit(ServiceMetricEvent.builder().setDimension("dataSource", "try").build("test", 10));
+}
+```
+We found that after some time, [batch.tryAddEvents](https://github.com/metamx/java-util/blob/java-util-1.3.2/src/main/java/com/metamx/emitter/core/HttpPostEmitter.java#L244) method always return false and the reference in `concurrentBatch` never changes and the `while(true)` loop just keeps on spinning without sending anything or creating new batch. 
+
+Still not sure why it is happening as its not happening for all deployments, might be some concurrency issue.
+
+@leventov 

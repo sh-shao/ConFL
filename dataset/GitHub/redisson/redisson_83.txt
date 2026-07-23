@@ -1,0 +1,19 @@
+Deadlock while obtaining lock
+Thread gets stuck while obtaining lock. Running 'keys L*' in redis-cli returns an empty list.
+
+```
+INFO   | jvm 1    | 2014/10/16 17:41:57 | "http-8080-exec-156" daemon prio=10 tid=0x00000000022ab800 nid=0x6535 in Object.wait() [0x00007f5799130000]
+INFO   | jvm 1    | 2014/10/16 17:41:57 |    java.lang.Thread.State: WAITING (on object monitor)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       at java.lang.Object.wait(Native Method)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       at java.lang.Object.wait(Object.java:503)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       at io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly(DefaultPromise.java:286)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       - locked <0x00000006793b7dc0> (a io.netty.util.concurrent.DefaultPromise)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       at io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly(DefaultPromise.java:32)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       at org.redisson.RedissonLock.lockInterruptibly(RedissonLock.java:233)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       at org.redisson.RedissonLock.lockInterruptibly(RedissonLock.java:226)
+INFO   | jvm 1    | 2014/10/16 17:41:57 |       at org.redisson.RedissonLock.lock(RedissonLock.java:206)
+```
+
+The same lock name was likely concurrently obtained and held by another thread possibly on another jvm, and then released.
+
+Redisson version used: 1.1.5

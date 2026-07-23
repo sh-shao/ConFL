@@ -1,0 +1,41 @@
+Deadlock in publshing message to PriorityQueue in multi-threaded environment
+I have multiple worker threads publishing message to a Redis priority Queue. I'm observing that all worker threads are waiting to acquire a semaphore  (0x000000008b0e8800) as shown in below thread dump. I'm using Redisson client.  3.22.0.  
+My thread dump do now show any thread already acquired the same semaphore. 
+
+
+```
+"worker-817435795" #48 prio=5 os_prio=0 cpu=4635.96ms elapsed=250263.14s tid=0x00007f87966b1740 nid=0x40 waiting on condition  [0x00007f87692fd000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@17.0.5/Native Method)
+	- parking to wait for  <0x000000008b0e8800> (a java.util.concurrent.Semaphore$NonfairSync)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@17.0.5/LockSupport.java:252)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.5/AbstractQueuedSynchronizer.java:717)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos(java.base@17.0.5/AbstractQueuedSynchronizer.java:1074)
+	at java.util.concurrent.Semaphore.tryAcquire(java.base@17.0.5/Semaphore.java:415)
+	at org.redisson.RedissonLock.lock(RedissonLock.java:121)
+	at org.redisson.RedissonLock.lock(RedissonLock.java:67)
+	at org.redisson.RedissonPriorityQueue.add(RedissonPriorityQueue.java:151)
+	at com.qualcomm.microservice.positioning.services.messaging.rds.RedissonMessagingMgr.publishQueue(RedissonMessagingMgr.java:67)
+	at com.qualcomm.microservice.positioning.common.Worker.getUserRequestObjFromRedisAndProcess(Worker.java:91)
+	at com.qualcomm.microservice.positioning.common.Worker.run(Worker.java:175)
+	at java.lang.Thread.run(java.base@17.0.5/Thread.java:833)
+
+"worker-661775617" #49 prio=5 os_prio=0 cpu=5197.28ms elapsed=250263.14s tid=0x00007f87966b21d0 nid=0x41 waiting on condition  [0x00007f86f45c7000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at jdk.internal.misc.Unsafe.park(java.base@17.0.5/Native Method)
+	- parking to wait for  <0x000000008b0e8800> (a java.util.concurrent.Semaphore$NonfairSync)
+	at java.util.concurrent.locks.LockSupport.parkNanos(java.base@17.0.5/LockSupport.java:252)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquire(java.base@17.0.5/AbstractQueuedSynchronizer.java:717)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer.tryAcquireSharedNanos(java.base@17.0.5/AbstractQueuedSynchronizer.java:1074)
+	at java.util.concurrent.Semaphore.tryAcquire(java.base@17.0.5/Semaphore.java:415)
+	at org.redisson.RedissonLock.lock(RedissonLock.java:121)
+	at org.redisson.RedissonLock.lock(RedissonLock.java:67)
+	at org.redisson.RedissonPriorityQueue.add(RedissonPriorityQueue.java:151)
+	at com.qualcomm.microservice.positioning.services.messaging.rds.RedissonMessagingMgr.publishQueue(RedissonMessagingMgr.java:67)
+	at com.qualcomm.microservice.positioning.common.Worker.getUserRequestObjFromRedisAndProcess(Worker.java:108)
+	at com.qualcomm.microservice.positioning.common.Worker.run(Worker.java:175)
+```
+
+
+Thanks,
+Nishi

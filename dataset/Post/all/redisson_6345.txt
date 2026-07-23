@@ -1,0 +1,103 @@
+Topic listeners leakage
+### Redis version
+
+7.2
+
+### Redisson version
+
+3.40.3-SNAPSHOT
+
+### Redisson configuration
+
+Production config:
+
+sentinelServersConfig:
+  checkSentinelsList: false
+  sslEnableEndpointIdentification: false
+  readMode: "MASTER"
+  subscriptionMode: "MASTER"
+  subscriptionConnectionPoolSize: 100
+  subscriptionsPerConnection: 10
+  subscriptionTimeout: 1000
+  sentinelAddresses:
+    - "${redis_hosts_0}"
+    - "${redis_hosts_1}"
+    - "${redis_hosts_2}"
+
+
+### What is the Expected behavior?
+
+all listeners are cleared after removal
+
+### What is the Actual behavior?
+
+some subscribers remain active after removal
+
+### Additional information
+
+We kept catching an error like this on production:
+```
+org.redisson.client.RedisTimeoutException: Unable to acquire subscription lock after Nms. Try to increase 'subscriptionTimeout', 'subscriptionsPerConnection', 'subscriptionConnectionPoolSize' parameters.
+```
+
+We raised the pool of subscribers and subscription timeout to 15 seconds (although in our scenario we would generally want to wait 100-200 milliseconds at most). 
+But errors still appeared, but not immediately, but after a few days of work.
+It is important to note that at the same time on the server now about 0-2 subscribers, so there should not be a race for the subscription lock.
+
+Began to suspect a subscriber leak, found several places with the leak in ours business logic, and the following test was found to reproduce the leak in redisson itself:
+```java
+public class RacePubSubTest extends RedisDockerTest {
+
+    @Test
+    public void testSubscriptionsRaceWithLambda() throws ExecutionException, InterruptedException {
+        final PublishSubscribeService subscribeService = ((Redisson) redisson)
+                .getConnectionManager().getSubscribeService();
+        assertThat(subscribeService.countAllListeners()).isZero();
+
+        final RTopic topic = redisson.getTopic("topic");
+
+        final int tasksCount = 100;
+        final Runnable task = () -> {
+            final MessageListener<Object> listener = (a, b) -> {};
+            final int listenerId = topic.addListener(Object.class, listener);
+            topic.removeListener(listenerId);
+        };
+
+        try (final var pool = Executors.newFixedThreadPool(2)) {
+            final List<Future<?>> futures = IntStream.range(0, tasksCount)
+                    .mapToObj(i -> task)
+                    .map(pool::submit)
+                    .collect(Collectors.toList());
+            for (final Future<?> future : futures) {
+                future.get();
+            }
+            pool.shutdown();
+        }
+
+        assertThat(subscribeService.countAllListeners()).isZero();
+    }
+
+}
+```
+
+This test failed (sometimes flap, if you increase the number of threads and tasks will fail constantly) on a fresh master on a branch from this pr: https://github.com/redisson/redisson/pull/6344
+
+The most interesting thing is that to fix the test, all you have to do is replace the lambda:
+```
+final MessageListener<Object> listener = (a, b) -> {};
+```
+With an explicit instant:
+```
+final MessageListener<Object> listener = new MessageListener<Object>() {
+    @Override
+    public void onMessage(CharSequence channel, Object msg) {
+    }
+};
+```
+
+I discovered that the subscription service uses `System.identityHashCode` as id of listener and in this example jvm optimizes lambda creation and uses exactly 1 object with identical `System.identityHashCode`.
+But I also see that in the library code the raw listener is wrapped in another object with explicit creation and supposedly there shouldn't be a problem with the same hashcode after that, but it seems there is. So far I haven't been able to figure out what exactly is going wrong here, so I bring an issue rather than a PR with fixing it.
+
+I have also reproduced this bug with amazon coretto, openjdk, and liberica (21 versions if it matters).
+
+Unfortunately even after fixing our leaks and replacing lambda with an explicit instance we still keep getting the subscription lock error, so I'm also attaching a PR (https://github.com/redisson/redisson/pull/6344) adding a way to calculate the number of active subscribers across all channels to set up monitoring and either confirm the existence of some other source of the leak or confirm that we need to dig in a different direction.

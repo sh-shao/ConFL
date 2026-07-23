@@ -1,0 +1,2 @@
+Possible PublishSubscribe race-condition
+There is a rare possibility of race-condition during channel re-connection and RTopic subscription invoked first time.

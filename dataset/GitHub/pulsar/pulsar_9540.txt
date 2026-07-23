@@ -1,0 +1,25 @@
+Pulsar client does not shutdown when messages are being produced to dead letter topic
+**Describe the bug**
+Pulsar client does not shutdown (deadlock occurs internally) when DLQ is configured in the consumer and failures are being produced to DLQ topic. This happens intermittently. I have been able to reproduce locally more often than not.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Produce messages to a topic and build a large backlog (tens of thousands of messages to ensure consumer is occupied for some time)
+2. Run a consumer with sub-type=SHARED and deadletter policy configured (redeliver-count = 1)
+3. Intentionally fail messages (negative-ack) so that they would be produced to DLQ
+3. Shut down consumer after 30 seconds or so by calling consumer.close followed by pulsarClient.close.
+4. main will not exit because consumer.close will block indefinitely
+
+**Expected behavior**
+Expected program to exit cleanly once consumer and client are shutdown.
+
+**Desktop (please complete the following information):**
+ - OS: Mac OSX 10.14.6
+ - Pulsar Standalone 2.7.0
+
+**Additional context**
+1. Consumer code to reproduce and thread dump of a stuck consumer:
+https://gist.github.com/anvinjain/9799d15b9c0edaf363ddfe5067301517
+2. Producer code not added in the gist. Trivial, random messages in a partitioned topic (partitions = 4)
+3. If you look at thread dump, you can see that unackedmessagetracker.stop is waiting on writelock which is acquired by the periodic timer task that runs in UnackedMessageTracker. The timer task in turn is blocked on producer.send
+

@@ -1,0 +1,52 @@
+NPE during load testing
+Hi.
+I'm relatively new to java, so sorry if i say something stupid.
+When i'm storming my server with 50 concurrent requests using AB, i'm getting NPE during some channel negotiating (as i guess). The following line (CommandDecoder:267):
+
+``` java
+    private MultiDecoder<Object> messageDecoder(CommandData<Object, Object> data, List<Object> parts) {
+        if (data == null) {
+            if (Arrays.asList("subscribe", "psubscribe", "punsubscribe", "unsubscribe").contains(parts.get(0))) {
+                String channelName = (String) parts.get(1);
+                return channels.get(channelName).getCommand().getReplayMultiDecoder(); // <<<<
+            } else if (parts.get(0).equals("message")) {
+```
+
+results in null pointer exception:
+
+```
+2015-30-09 18:28:11.271 [nioEventLoopGroup-2-2] WARN  i.n.channel.DefaultChannelPipeline - An exceptionCaught() event was fired, and it reached at the tail of the pipeline. It usually means the last handler in the pipeline did not handle the exception.
+io.netty.handler.codec.DecoderException: java.lang.NullPointerException
+    at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:425) ~[backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:230) ~[backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:308) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:294) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.ChannelInboundHandlerAdapter.channelRead(ChannelInboundHandlerAdapter.java:86) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:308) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:294) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.ChannelInboundHandlerAdapter.channelRead(ChannelInboundHandlerAdapter.java:86) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:308) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:294) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:846) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:131) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:511) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:468) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:382) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:354) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.util.concurrent.SingleThreadEventExecutor$2.run(SingleThreadEventExecutor.java:110) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.util.concurrent.DefaultThreadFactory$DefaultRunnableDecorator.run(DefaultThreadFactory.java:137) [backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at java.lang.Thread.run(Thread.java:745) [na:1.8.0_60]
+Caused by: java.lang.NullPointerException: null
+    at org.redisson.client.handler.CommandDecoder.messageDecoder(CommandDecoder.java:267) ~[backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at org.redisson.client.handler.CommandDecoder.decodeMulti(CommandDecoder.java:202) ~[backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:189) ~[backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:97) ~[backend-phone-service-0.1.0-shaded-cp.jar:na]
+    at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:370) ~[backend-phone-service-0.1.0-shaded-cp.jar:na]
+    ... 18 common frames omitted
+```
+
+I'm not 100% sure where does this problem originate from, but i can tell that those requests use Redisson for inter-process locks and fetching/updating two string sets.
+
+I'm using Redisson 2.1.3 against dockerized Redis 3.0.2 (the standard docker library image)
+
+upd: debugger told me that client has received null for hannels.get() for `redisson__lock__channel__{lock:pn:phone-number:79219767095}`, which, i guess, means trouble with lock.

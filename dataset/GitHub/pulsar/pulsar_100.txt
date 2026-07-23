@@ -1,0 +1,9 @@
+Consumers blocked with 0 availablePermits
+When a consumer with `ackTimeout` connects, it negotiates a given amount of permits with broker (say 1000), it then receives 1000 messages. At this point the consumer has 0 `availablePermits` and 1000 `unackedMessages`, If no one pulls these messages from this consumer, they are eventually redelivered to the broker, now the broker schedules redelivery of those messages, but never increments `availablePermits` for the consumer, leaving the consumer stuck with 0 `availablePermits`.
+
+This happens at least with perMessageRedelivery, as a redelivery does not necessarily imply that permits have to be granted to the consumer. Unfortunately, I don't know if the Broker can really do something here. 
+
+I believe this issue is a consequence of a consumer asking for redelivery of messages that have never been pulled from the queue.
+
+The best approach seems to be for the consumer to ask for more permits when this is the case.
+What do you think?

@@ -1,0 +1,57 @@
+RedissonMap deadlock on computeAsync with MapLoader
+**Expected behavior**
+No deadlock when using `computeAsync` with `MapLoader` at key without value yet.
+
+**Actual behavior**
+Below is the problem that I found at the `RedissonMap` code.
+When using a map with a loader and there is no value yet at Redis, the call `computeAsync` will deadlock because:
+- First, it will lock based on the key at the current thread, below snippet is from `RedissonMap`
+```java
+// ... RedissonMap.java:248
+Lock lock = getLock(key);
+        long threadId = Thread.currentThread().getId();
+        CompletionStage<V> f = lock.lockAsync(threadId)
+                .thenCompose(r -> {
+                RFuture<V> oldValueFuture = getAsync(key); // after lock retrieved, it try to getAsync based on the samekey
+                return oldValueFuture.thenCompose(oldValue -> {
+                    CompletableFuture<V> result = new CompletableFuture<>();
+``` 
+- Below is `getAsync` snippet, when it has a loader it will `loadValue` again when res is null
+```java
+// ... RedissonMap.java:1164
+        RFuture<V> future = getOperationAsync(key);
+        if (hasNoLoader()) { // When no loader
+            return future;
+        }
+
+        long threadId = Thread.currentThread().getId();
+        CompletionStage<V> f = future.thenCompose(res -> {
+            if (res == null) { // no res
+                return loadValue(key, false, threadId); // will call loadValue -> this will try to Lock again but this will be diff thread
+            }
+// ...
+```
+- Below is `loadValue` snippet
+```java
+// ... RedissonMap.java:1683
+    protected CompletableFuture<V> loadValue(K key, boolean replaceValue, long threadId) { 
+        RLock lock = getLock(key);
+        return lock.lockAsync(threadId).thenCompose(res -> { // deadlock here since it will be different thread and previous lock not released yet
+```
+
+**Steps to reproduce or test case**
+- Get a RedissonMap with loader class
+- Make sure there is no key with value yet (at redis)
+- Call the computeAsync
+- It will deadlock as long as the second `loadValue` is processed by a different thread
+
+**Redis version**
+Tested at Redis container redis:5.0.3-alpine
+
+**Redisson version**
+3.19.1
+
+**Redisson configuration**
+Default single server config.
+nettyThread = 64
+checkLockSynchedSlaves = false

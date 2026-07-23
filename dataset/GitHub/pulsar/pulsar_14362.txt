@@ -1,0 +1,223 @@
+Broker Healthcheck Endpoint Exposes Race Conditions
+**Describe the bug**
+
+There appears to be a few race conditions in the `/brokers/health` endpoint. I verified this is in 2.9.1 and it looks like it is probably present in master.
+
+There are several issues exposed by this behavior and the resulting stack traces.
+
+- One call to that endpoint can force another to fail.
+- There is a chance for an NPE here: https://github.com/apache/pulsar/blob/f7f861988780578e2ba102ce4e22fa8841c13e3b/pulsar-broker/src/main/java/org/apache/pulsar/broker/service/persistent/PersistentTopic.java#L1051-L1057
+- Also relevant for the above code is that because it is called outside of a lock on the subscription, it could possibly remove the _wrong_ subscription.
+- This method is blocking a pulsar thread without any obvious reason: https://github.com/apache/pulsar/blob/f7f861988780578e2ba102ce4e22fa8841c13e3b/managed-ledger/src/main/java/org/apache/bookkeeper/mledger/impl/ManagedLedgerImpl.java#L1008-L1037
+
+It's obvious to me how we should fix the endpoint to make it work for concurrent calls. I am going to start by focusing on the other calls.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Deploy a 2.9.1 broker.
+2. Run `curl -s --fail http://localhost:8080/admin/v2/brokers/health $ &  sleep 0.05 ; curl -s --fail http://localhost:8080/admin/v2/brokers/health`
+3. Observer logs.
+4. It's possible that you'll need to rerun step 2 several times. Given that it is a race in the endpoint, it is not guaranteed to trigger every time.
+
+Resulting stack trace:
+
+```
+2022-02-17T23:29:45,090+0000 [pulsar-web-36-2] INFO  org.apache.pulsar.broker.admin.impl.BrokersBase - Running healthCheck with topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck
+2022-02-17T23:29:45,094+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ProducerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [null] Creating producer on cnx [id: 0x8bb88ae1, L:/172.17.0.13:34648 - R:172.17.0.13/172.17.0.13:6650]
+2022-02-17T23:29:45,094+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648][persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] Creating producer. producerId=124
+2022-02-17T23:29:45,095+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ConsumerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Subscribing to topic on cnx [id: 0x8bb88ae1, L:/172.17.0.13:34648 - R:172.17.0.13/172.17.0.13:6650], consumerId 124
+2022-02-17T23:29:45,096+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Subscribing on topic persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck / reader-b624a86dcd
+2022-02-17T23:29:45,105+0000 [BookKeeperClientWorker-OrderedExecutor-3-0] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Created new producer: Producer{topic=PersistentTopic{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck}, client=/172.17.0.13:34648, producerName=pulsar-0-171, producerId=124}
+2022-02-17T23:29:45,106+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ProducerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [pulsar-0-171] Created producer on cnx [id: 0x8bb88ae1, L:/172.17.0.13:34648 - R:172.17.0.13/172.17.0.13:6650]
+2022-02-17T23:29:45,124+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.persistent.PersistentTopic - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Creating non-durable subscription at msg id 9223372036854775807:9223372036854775807:-1:-1
+2022-02-17T23:29:45,125+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl - [pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck] Created non-durable cursor read-position=0:124 mark-delete-position=0:123
+2022-02-17T23:29:45,125+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl - [pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck] Opened new cursor: NonDurableCursorImpl{ledger=pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck, ackPos=0:123, readPos=0:124}
+2022-02-17T23:29:45,125+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.bookkeeper.mledger.impl.ManagedCursorImpl - [pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck-reader-b624a86dcd] Rewind from 0:124 to 0:124
+2022-02-17T23:29:45,125+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.persistent.PersistentTopic - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] There are no replicated subscriptions on the topic
+2022-02-17T23:29:45,125+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.persistent.PersistentTopic - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Created new subscription for 124
+2022-02-17T23:29:45,125+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Created subscription on topic persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck / reader-b624a86dcd
+2022-02-17T23:29:45,126+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ConsumerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Subscribed to topic on 172.17.0.13/172.17.0.13:6650 -- consumer: 124
+2022-02-17T23:29:45,144+0000 [pulsar-client-internal-39-1] INFO  org.eclipse.jetty.server.RequestLog - 127.0.0.1 - - [17/Feb/2022:23:29:45 +0000] "GET /admin/v2/brokers/health HTTP/1.1" 200 2 "-" "curl/7.68.0" 56
+2022-02-17T23:29:45,143+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.admin.impl.BrokersBase - Running healthCheck with topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck
+2022-02-17T23:29:45,145+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.service.persistent.PersistentSubscription - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Unsubscribing
+2022-02-17T23:29:45,149+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.service.Consumer - Disconnecting consumer: Consumer{subscription=PersistentSubscription{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck, name=reader-b624a86dcd}, consumerId=124, consumerName=30cb0, address=/172.17.0.13:34648}
+2022-02-17T23:29:45,150+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.service.AbstractDispatcherSingleActiveConsumer - Removing consumer Consumer{subscription=PersistentSubscription{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck, name=reader-b624a86dcd}, consumerId=124, consumerName=30cb0, address=/172.17.0.13:34648}
+2022-02-17T23:29:45,151+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.service.persistent.PersistentSubscription - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Successfully closed subscription [NonDurableCursorImpl{ledger=pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck, ackPos=0:123, readPos=0:125}]
+2022-02-17T23:29:45,151+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.service.persistent.PersistentSubscription - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Successfully closed dispatcher for reader
+2022-02-17T23:29:45,151+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [PersistentTopic{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck}][pulsar-0-171] Closing producer on cnx /172.17.0.13:34648. producerId=124
+2022-02-17T23:29:45,152+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.service.persistent.PersistentSubscription - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Successfully closed subscription [NonDurableCursorImpl{ledger=pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck, ackPos=0:123, readPos=0:125}]
+2022-02-17T23:29:45,152+0000 [pulsar-web-36-5] INFO  org.apache.pulsar.broker.service.persistent.PersistentSubscription - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Successfully disconnected and closed subscription
+2022-02-17T23:29:45,152+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [PersistentTopic{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck}][pulsar-0-171] Closed producer on cnx /172.17.0.13:34648. producerId=124
+2022-02-17T23:29:45,152+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Closing consumer: consumerId=124
+2022-02-17T23:29:45,152+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ProducerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [pulsar-0-171] Closed Producer
+2022-02-17T23:29:45,153+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ClientCnx - [172.17.0.13/172.17.0.13:6650] Broker notification of Closed consumer: 124
+2022-02-17T23:29:45,153+0000 [pulsar-io-4-4] WARN  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Consumer was not registered on the connection: consumerId=124
+2022-02-17T23:29:45,153+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ConnectionHandler - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [reader-b624a86dcd] Ignoring reconnection request (state: Closing)
+2022-02-17T23:29:45,153+0000 [pulsar-io-4-3] WARN  org.apache.pulsar.client.impl.ClientCnx - [id: 0x8bb88ae1, L:/172.17.0.13:34648 - R:172.17.0.13/172.17.0.13:6650] Received error from server: Consumer not found
+2022-02-17T23:29:45,155+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ConsumerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [reader-b624a86dcd] Closed consumer
+2022-02-17T23:29:45,158+0000 [bookkeeper-ml-scheduler-OrderedScheduler-0-0] ERROR org.apache.pulsar.broker.service.persistent.PersistentSubscription - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-b624a86dcd] Error deleting subscription
+java.util.concurrent.CompletionException: org.apache.pulsar.broker.service.BrokerServiceException$PersistenceException: org.apache.bookkeeper.mledger.ManagedLedgerException$CursorNotFoundException: ManagedCursor not found: reader-b624a86dcd
+	at java.util.concurrent.CompletableFuture.encodeRelay(CompletableFuture.java:367) ~[?:?]
+	at java.util.concurrent.CompletableFuture.completeRelay(CompletableFuture.java:376) ~[?:?]
+	at java.util.concurrent.CompletableFuture$UniRelay.tryFire(CompletableFuture.java:1019) ~[?:?]
+	at java.util.concurrent.CompletableFuture.postComplete(CompletableFuture.java:506) ~[?:?]
+	at java.util.concurrent.CompletableFuture.completeExceptionally(CompletableFuture.java:2088) ~[?:?]
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic$5.deleteCursorFailed(PersistentTopic.java:1025) ~[org.apache.pulsar-pulsar-broker-2.9.1.jar:2.9.1]
+	at org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl.asyncDeleteCursor(ManagedLedgerImpl.java:950) ~[org.apache.pulsar-managed-ledger-2.9.1.jar:2.9.1]
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.asyncDeleteCursor(PersistentTopic.java:1008) ~[org.apache.pulsar-pulsar-broker-2.9.1.jar:2.9.1]
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.access$600(PersistentTopic.java:164) ~[org.apache.pulsar-pulsar-broker-2.9.1.jar:2.9.1]
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic$4.deleteLedgerFailed(PersistentTopic.java:994) ~[org.apache.pulsar-pulsar-broker-2.9.1.jar:2.9.1]
+	at org.apache.bookkeeper.mledger.impl.ManagedLedgerFactoryImpl$9.getInfoFailed(ManagedLedgerFactoryImpl.java:876) ~[org.apache.pulsar-managed-ledger-2.9.1.jar:2.9.1]
+	at org.apache.bookkeeper.mledger.impl.ManagedLedgerFactoryImpl$7.operationFailed(ManagedLedgerFactoryImpl.java:803) ~[org.apache.pulsar-managed-ledger-2.9.1.jar:2.9.1]
+	at org.apache.bookkeeper.mledger.impl.MetaStoreImpl.lambda$getManagedLedgerInfo$2(MetaStoreImpl.java:118) ~[org.apache.pulsar-managed-ledger-2.9.1.jar:2.9.1]
+	at java.util.concurrent.CompletableFuture$UniAccept.tryFire(CompletableFuture.java:714) [?:?]
+	at java.util.concurrent.CompletableFuture$Completion.run(CompletableFuture.java:478) [?:?]
+	at org.apache.bookkeeper.common.util.OrderedExecutor$TimedRunnable.run(OrderedExecutor.java:203) [org.apache.bookkeeper-bookkeeper-common-4.14.2.jar:4.14.2]
+	at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:515) [?:?]
+	at java.util.concurrent.FutureTask.run(FutureTask.java:264) [?:?]
+	at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:304) [?:?]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128) [?:?]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628) [?:?]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) [io.netty-netty-common-4.1.72.Final.jar:4.1.72.Final]
+	at java.lang.Thread.run(Thread.java:829) [?:?]
+Caused by: org.apache.pulsar.broker.service.BrokerServiceException$PersistenceException: org.apache.bookkeeper.mledger.ManagedLedgerException$CursorNotFoundException: ManagedCursor not found: reader-b624a86dcd
+	... 18 more
+Caused by: org.apache.bookkeeper.mledger.ManagedLedgerException$CursorNotFoundException: ManagedCursor not found: reader-b624a86dcd
+2022-02-17T23:29:45,163+0000 [pulsar-io-4-3] WARN  org.apache.pulsar.broker.admin.impl.BrokersBase - Error closing reader for healthcheck
+org.apache.pulsar.client.api.PulsarClientException$BrokerMetadataException: {"errorMsg":"Consumer not found","reqId":2585972327142211972, "remote":"172.17.0.13/172.17.0.13:6650", "local":"/172.17.0.13:34648"}
+	at org.apache.pulsar.client.impl.ClientCnx.getPulsarClientException(ClientCnx.java:1150) ~[org.apache.pulsar-pulsar-client-original-2.9.1.jar:2.9.1]
+	at org.apache.pulsar.client.impl.ClientCnx.handleError(ClientCnx.java:710) [org.apache.pulsar-pulsar-client-original-2.9.1.jar:2.9.1]
+	at org.apache.pulsar.common.protocol.PulsarDecoder.channelRead(PulsarDecoder.java:177) [org.apache.pulsar-pulsar-common-2.9.1.jar:2.9.1]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.handler.codec.ByteToMessageDecoder.fireChannelRead(ByteToMessageDecoder.java:324) [io.netty-netty-codec-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:296) [io.netty-netty-codec-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:357) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1410) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:379) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:365) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919) [io.netty-netty-transport-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.epoll.AbstractEpollStreamChannel$EpollStreamUnsafe.epollInReady(AbstractEpollStreamChannel.java:795) [io.netty-netty-transport-classes-epoll-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.epoll.EpollEventLoop.processReady(EpollEventLoop.java:480) [io.netty-netty-transport-classes-epoll-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.channel.epoll.EpollEventLoop.run(EpollEventLoop.java:378) [io.netty-netty-transport-classes-epoll-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:986) [io.netty-netty-common-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) [io.netty-netty-common-4.1.72.Final.jar:4.1.72.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) [io.netty-netty-common-4.1.72.Final.jar:4.1.72.Final]
+	at java.lang.Thread.run(Thread.java:829) [?:?]
+2022-02-17T23:29:45,170+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ProducerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [null] Creating producer on cnx [id: 0x8bb88ae1, L:/172.17.0.13:34648 - R:172.17.0.13/172.17.0.13:6650]
+2022-02-17T23:29:45,175+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648][persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] Creating producer. producerId=125
+2022-02-17T23:29:45,175+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ConsumerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-37f6b60cd2] Subscribing to topic on cnx [id: 0x8bb88ae1, L:/172.17.0.13:34648 - R:172.17.0.13/172.17.0.13:6650], consumerId 125
+2022-02-17T23:29:45,177+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Subscribing on topic persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck / reader-37f6b60cd2
+2022-02-17T23:29:45,181+0000 [BookKeeperClientWorker-OrderedExecutor-2-0] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Created new producer: Producer{topic=PersistentTopic{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck}, client=/172.17.0.13:34648, producerName=pulsar-0-172, producerId=125}
+2022-02-17T23:29:45,182+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ProducerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [pulsar-0-172] Created producer on cnx [id: 0x8bb88ae1, L:/172.17.0.13:34648 - R:172.17.0.13/172.17.0.13:6650]
+2022-02-17T23:29:45,192+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.persistent.PersistentTopic - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-37f6b60cd2] Creating non-durable subscription at msg id 9223372036854775807:9223372036854775807:-1:-1
+2022-02-17T23:29:45,192+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.bookkeeper.mledger.impl.NonDurableCursorImpl - [pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck] Created non-durable cursor read-position=0:125 mark-delete-position=0:124
+2022-02-17T23:29:45,192+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl - [pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck] Opened new cursor: NonDurableCursorImpl{ledger=pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck, ackPos=0:124, readPos=0:125}
+2022-02-17T23:29:45,193+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.bookkeeper.mledger.impl.ManagedCursorImpl - [pulsar/pulsar/172.17.0.13:8080/persistent/healthcheck-reader-37f6b60cd2] Rewind from 0:125 to 0:125
+2022-02-17T23:29:45,193+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.persistent.PersistentTopic - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] There are no replicated subscriptions on the topic
+2022-02-17T23:29:45,193+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.persistent.PersistentTopic - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-37f6b60cd2] Created new subscription for 125
+2022-02-17T23:29:45,193+0000 [ForkJoinPool.commonPool-worker-7] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Created subscription on topic persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck / reader-37f6b60cd2
+2022-02-17T23:29:45,194+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ConsumerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck][reader-37f6b60cd2] Subscribed to topic on 172.17.0.13/172.17.0.13:6650 -- consumer: 125
+2022-02-17T23:29:45,209+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [PersistentTopic{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck}][pulsar-0-172] Closing producer on cnx /172.17.0.13:34648. producerId=125
+2022-02-17T23:29:45,209+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [PersistentTopic{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck}][pulsar-0-172] Closed producer on cnx /172.17.0.13:34648. producerId=125
+2022-02-17T23:29:45,210+0000 [pulsar-io-4-3] INFO  org.apache.pulsar.client.impl.ProducerImpl - [persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck] [pulsar-0-172] Closed Producer
+2022-02-17T23:29:45,210+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.ServerCnx - [/172.17.0.13:34648] Closing consumer: consumerId=125
+2022-02-17T23:29:45,212+0000 [pulsar-io-4-4] INFO  org.apache.pulsar.broker.service.AbstractDispatcherSingleActiveConsumer - Removing consumer Consumer{subscription=PersistentSubscription{topic=persistent://pulsar/pulsar/172.17.0.13:8080/healthcheck, name=reader-37f6b60cd2}, consumerId=125, consumerName=796c6, address=/172.17.0.13:34648}
+```
+
+Another time, I got the below stack trace. In this case, I was using a custom build of Pulsar, so the line numbers are a bit off, but the NPEs are relevant and should be addressed.
+
+```
+15:11:12.170 [pulsar-web-40-6] ERROR org.apache.pulsar.broker.service.persistent.PersistentSubscription - [persistent://pulsar/pulsar/10.16.1.52:8080/healthcheck][reader-6a02552209] Error deleting subscription
+java.util.concurrent.CompletionException: java.lang.NullPointerException
+	at java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:314) ~[?:?]
+	at java.util.concurrent.CompletableFuture.uniComposeStage(CompletableFuture.java:1113) ~[?:?]
+	at java.util.concurrent.CompletableFuture.thenCompose(CompletableFuture.java:2235) ~[?:?]
+	at org.apache.pulsar.broker.service.persistent.PersistentSubscription.delete(PersistentSubscription.java:917) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.broker.service.persistent.PersistentSubscription.deleteForcefully(PersistentSubscription.java:880) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.broker.admin.impl.BrokersBase.lambda$healthcheck$4(BrokersBase.java:323) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap$Section.forEach(ConcurrentOpenHashMap.java:413) ~[com.datastax.oss-pulsar-common-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.common.util.collections.ConcurrentOpenHashMap.forEach(ConcurrentOpenHashMap.java:185) ~[com.datastax.oss-pulsar-common-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.broker.admin.impl.BrokersBase.lambda$healthcheck$5(BrokersBase.java:321) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at java.util.Optional.ifPresent(Optional.java:183) ~[?:?]
+	at org.apache.pulsar.broker.admin.impl.BrokersBase.healthcheck(BrokersBase.java:320) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at jdk.internal.reflect.GeneratedMethodAccessor16.invoke(Unknown Source) ~[?:?]
+	at jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43) ~[?:?]
+	at java.lang.reflect.Method.invoke(Method.java:566) ~[?:?]
+	at org.glassfish.jersey.server.model.internal.ResourceMethodInvocationHandlerFactory.lambda$static$0(ResourceMethodInvocationHandlerFactory.java:52) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher$1.run(AbstractJavaResourceMethodDispatcher.java:124) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher.invoke(AbstractJavaResourceMethodDispatcher.java:167) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.model.internal.JavaResourceMethodDispatcherProvider$VoidOutInvoker.doDispatch(JavaResourceMethodDispatcherProvider.java:159) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.model.internal.AbstractJavaResourceMethodDispatcher.dispatch(AbstractJavaResourceMethodDispatcher.java:79) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.invoke(ResourceMethodInvoker.java:475) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.apply(ResourceMethodInvoker.java:397) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.model.ResourceMethodInvoker.apply(ResourceMethodInvoker.java:81) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.ServerRuntime$1.run(ServerRuntime.java:255) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.internal.Errors$1.call(Errors.java:248) ~[org.glassfish.jersey.core-jersey-common-2.34.jar:?]
+	at org.glassfish.jersey.internal.Errors$1.call(Errors.java:244) ~[org.glassfish.jersey.core-jersey-common-2.34.jar:?]
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:292) ~[org.glassfish.jersey.core-jersey-common-2.34.jar:?]
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:274) ~[org.glassfish.jersey.core-jersey-common-2.34.jar:?]
+	at org.glassfish.jersey.internal.Errors.process(Errors.java:244) ~[org.glassfish.jersey.core-jersey-common-2.34.jar:?]
+	at org.glassfish.jersey.process.internal.RequestScope.runInScope(RequestScope.java:265) ~[org.glassfish.jersey.core-jersey-common-2.34.jar:?]
+	at org.glassfish.jersey.server.ServerRuntime.process(ServerRuntime.java:234) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.server.ApplicationHandler.handle(ApplicationHandler.java:680) ~[org.glassfish.jersey.core-jersey-server-2.34.jar:?]
+	at org.glassfish.jersey.servlet.WebComponent.serviceImpl(WebComponent.java:394) ~[org.glassfish.jersey.containers-jersey-container-servlet-core-2.34.jar:?]
+	at org.glassfish.jersey.servlet.WebComponent.service(WebComponent.java:346) ~[org.glassfish.jersey.containers-jersey-container-servlet-core-2.34.jar:?]
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:366) ~[org.glassfish.jersey.containers-jersey-container-servlet-core-2.34.jar:?]
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:319) ~[org.glassfish.jersey.containers-jersey-container-servlet-core-2.34.jar:?]
+	at org.glassfish.jersey.servlet.ServletContainer.service(ServletContainer.java:205) ~[org.glassfish.jersey.containers-jersey-container-servlet-core-2.34.jar:?]
+	at org.eclipse.jetty.servlet.ServletHolder.handle(ServletHolder.java:799) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.servlet.ServletHandler$ChainEnd.doFilter(ServletHandler.java:1631) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.apache.pulsar.broker.web.ResponseHandlerFilter.doFilter(ResponseHandlerFilter.java:65) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.eclipse.jetty.servlet.FilterHolder.doFilter(FilterHolder.java:193) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.servlet.ServletHandler$Chain.doFilter(ServletHandler.java:1601) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.apache.pulsar.broker.web.AuthenticationFilter.doFilter(AuthenticationFilter.java:84) ~[com.datastax.oss-pulsar-broker-common-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.eclipse.jetty.servlet.FilterHolder.doFilter(FilterHolder.java:193) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.servlet.ServletHandler$Chain.doFilter(ServletHandler.java:1601) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.servlet.ServletHandler.doHandle(ServletHandler.java:548) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:233) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.session.SessionHandler.doHandle(SessionHandler.java:1624) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextHandle(ScopedHandler.java:233) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ContextHandler.doHandle(ContextHandler.java:1434) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:188) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.servlet.ServletHandler.doScope(ServletHandler.java:501) ~[org.eclipse.jetty-jetty-servlet-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.session.SessionHandler.doScope(SessionHandler.java:1594) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ScopedHandler.nextScope(ScopedHandler.java:186) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ContextHandler.doScope(ContextHandler.java:1349) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ScopedHandler.handle(ScopedHandler.java:141) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.ContextHandlerCollection.handle(ContextHandlerCollection.java:234) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.HandlerCollection.handle(HandlerCollection.java:146) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.StatisticsHandler.handle(StatisticsHandler.java:179) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.handler.HandlerWrapper.handle(HandlerWrapper.java:127) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.Server.handle(Server.java:516) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.HttpChannel.lambda$handle$1(HttpChannel.java:400) ~[org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.HttpChannel.dispatch(HttpChannel.java:645) [org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.HttpChannel.handle(HttpChannel.java:392) [org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.server.HttpConnection.onFillable(HttpConnection.java:277) [org.eclipse.jetty-jetty-server-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.io.AbstractConnection$ReadCallback.succeeded(AbstractConnection.java:311) [org.eclipse.jetty-jetty-io-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.io.FillInterest.fillable(FillInterest.java:105) [org.eclipse.jetty-jetty-io-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.io.ChannelEndPoint$1.run(ChannelEndPoint.java:104) [org.eclipse.jetty-jetty-io-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.runTask(EatWhatYouKill.java:338) [org.eclipse.jetty-jetty-util-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.doProduce(EatWhatYouKill.java:315) [org.eclipse.jetty-jetty-util-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.tryProduce(EatWhatYouKill.java:173) [org.eclipse.jetty-jetty-util-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.util.thread.strategy.EatWhatYouKill.run(EatWhatYouKill.java:131) [org.eclipse.jetty-jetty-util-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at org.eclipse.jetty.util.thread.ReservedThreadExecutor$ReservedThread.run(ReservedThreadExecutor.java:409) [org.eclipse.jetty-jetty-util-9.4.44.v20210927.jar:9.4.44.v20210927]
+	at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1128) [?:?]
+	at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:628) [?:?]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) [io.netty-netty-common-4.1.73.Final.jar:4.1.73.Final]
+	at java.lang.Thread.run(Thread.java:829) [?:?]
+Caused by: java.lang.NullPointerException
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.removeSubscription(PersistentTopic.java:987) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic$4.deleteCursorComplete(PersistentTopic.java:967) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.bookkeeper.mledger.impl.ManagedLedgerImpl.asyncDeleteCursor(ManagedLedgerImpl.java:953) ~[com.datastax.oss-managed-ledger-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.broker.service.persistent.PersistentTopic.unsubscribe(PersistentTopic.java:961) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at org.apache.pulsar.broker.service.persistent.PersistentSubscription.lambda$delete$19(PersistentSubscription.java:917) ~[com.datastax.oss-pulsar-broker-2.8.0.1.1.22.jar:2.8.0.1.1.22]
+	at java.util.concurrent.CompletableFuture.uniComposeStage(CompletableFuture.java:1106) ~[?:?]
+	... 74 more
+```
+
+**Expected behavior**
+I would expect the health check endpoint to work correctly for concurrent calls.

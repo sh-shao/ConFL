@@ -1,0 +1,19 @@
+Race condition in IncrementalIndex's facts
+In OnheapIncrementalIndex::addToFacts(...), when we get a new fact, we will first add the mapping from key to fact's index, then we do aggregate. It will cause query saw some unaggregated metrics with initial value, and sometimes may cause some weird situations. Like if we use LongMax for build but use LongSum for query, then the result may add LongMax's initial value which is LONG.MIN_VALUE.
+
+BTW, do we need to deal with this:
+
+```
+      final Integer prev = facts.putIfAbsent(key, rowIndex);
+      if (null == prev) {
+        numEntries.incrementAndGet();
+      } else {
+        // We lost a race
+        aggs = concurrentGet(prev);
+        // Free up the misfire
+        concurrentRemove(rowIndex);
+        // This is expected to occur ~80% of the time in the worst scenarios
+      }
+```
+
+I don't find any multi-thread adds for IncremetalIndex.

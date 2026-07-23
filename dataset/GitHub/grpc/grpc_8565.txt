@@ -1,0 +1,174 @@
+Data race in RetriableStream.onReady()
+As shown in the following stack trace, `RetriableStream.onReady()` is calling `isReady()` on transport thread, whereas `isReady()` is calling `frame().isClosed()`, but `framer.closed` is not thread-safe.
+
+```
+WARNING: ThreadSanitizer: data race (pid=6458)
+  Write of size 1 at 0x0000cef27b09 by thread T36:
+    #0 io.grpc.internal.MessageFramer.close()V MessageFramer.java:320 
+    #1 io.grpc.internal.AbstractStream.endOfMessages()V AbstractStream.java:84 
+    #2 io.grpc.internal.AbstractClientStream.halfClose()V AbstractClientStream.java:194 
+    #3 io.grpc.internal.ForwardingClientStream.halfClose()V ForwardingClientStream.java:72 
+    #4 io.grpc.internal.RetriableStream$1HalfCloseEntry.runWith(Lio/grpc/internal/RetriableStream$Substream;)V RetriableStream.java:655 
+    #5 io.grpc.internal.RetriableStream.delayOrExecute(Lio/grpc/internal/RetriableStream$BufferEntry;)V RetriableStream.java:526 
+    #6 io.grpc.internal.RetriableStream.halfClose()V RetriableStream.java:659 
+    #7 io.grpc.internal.ClientCallImpl.halfCloseInternal()V ClientCallImpl.java:497 
+    #8 io.grpc.internal.ClientCallImpl.halfClose()V ClientCallImpl.java:486 
+    #9 io.grpc.internal.DelayedClientCall$6.run()V DelayedClientCall.java:360 
+    #10 io.grpc.internal.DelayedClientCall.delayOrExecute(Ljava/lang/Runnable;)V DelayedClientCall.java:247 
+    #11 io.grpc.internal.DelayedClientCall.halfClose()V DelayedClientCall.java:357 
+    #12 io.grpc.PartialForwardingClientCall.halfClose()V PartialForwardingClientCall.java:44 
+    #13 io.grpc.ForwardingClientCall.halfClose()V ForwardingClientCall.java:22 
+    #14 io.grpc.ForwardingClientCall$SimpleForwardingClientCall.halfClose()V ForwardingClientCall.java:44 
+    #15 io.grpc.PartialForwardingClientCall.halfClose()V PartialForwardingClientCall.java:44 
+    #16 io.grpc.ForwardingClientCall.halfClose()V ForwardingClientCall.java:22 
+    #17 io.grpc.ForwardingClientCall$SimpleForwardingClientCall.halfClose()V ForwardingClientCall.java:44 
+    #18 io.grpc.stub.ClientCalls.asyncUnaryRequestCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/stub/ClientCalls$StartableListener;)V ClientCalls.java:309 
+    #19 io.grpc.stub.ClientCalls.asyncUnaryRequestCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/stub/StreamObserver;Z)V ClientCalls.java:294 
+    #20 io.grpc.stub.ClientCalls.asyncUnaryCall(Lio/grpc/ClientCall;Ljava/lang/Object;Lio/grpc/stub/StreamObserver;)V ClientCalls.java:68 
+    #21 com.google.apphosting.runtime.grpc.GrpcClientContext.call(Lio/grpc/Channel;Lio/grpc/MethodDescriptor;Ljava/lang/Object;Lio/grpc/stub/StreamObserver;)V GrpcClientContext.java:46 
+    #22 com.google.apphosting.runtime.anyrpc.GrpcClients$GrpcEvaluationRuntimeClient.handleRequest(Lcom/google/apphosting/runtime/anyrpc/AnyRpcClientContext;Lcom/google/apphosting/base/protos/RuntimePb$UPRequest;Lcom/google/apphosting/runtime/anyrpc/AnyRpcCallbac GrpcClients.java:43 
+    #23 com.google.apphosting.runtime.anyrpc.AbstractRpcCompatibilityTest.runClient(ILjava/util/concurrent/CountDownLatch;Lcom/google/apphosting/runtime/anyrpc/ClientInterfaces$EvaluationRuntimeClient;Ljava/util/concurrent/Semaphore;Ljava/util/Queue;)V AbstractRpcCompatibilityTest.java:596 
+    #24 com.google.apphosting.runtime.anyrpc.AbstractRpcCompatibilityTest.lambda$doTestConcurrency$0(ILjava/util/concurrent/CountDownLatch;Lcom/google/apphosting/runtime/anyrpc/ClientInterfaces$EvaluationRuntimeClient;Ljava/util/concurrent/Semaphore;Ljava/util/Qu AbstractRpcCompatibilityTest.java:573 
+    #25 com.google.apphosting.runtime.anyrpc.AbstractRpcCompatibilityTest$$Lambda$94.run()V ?? 
+    #26 java.lang.Thread.run()V Thread.java:830 
+    #27 (Generated Stub) <null> 
+ 
+  Previous read of size 1 at 0x0000cef27b09 by thread T24:
+    #0 io.grpc.internal.MessageFramer.isClosed()Z MessageFramer.java:310 
+    #1 io.grpc.internal.AbstractStream.isReady()Z AbstractStream.java:94 
+    #2 io.grpc.internal.AbstractClientStream.isReady()Z AbstractClientStream.java:207 
+    #3 io.grpc.internal.ForwardingClientStream.isReady()Z ForwardingClientStream.java:47 
+    #4 io.grpc.internal.RetriableStream.isReady()Z RetriableStream.java:595 
+    #5 io.grpc.internal.RetriableStream$Sublistener.onReady()V RetriableStream.java:1051 
+    #6 io.grpc.internal.ForwardingClientStreamListener.onReady()V ForwardingClientStreamListener.java:44 
+    #7 io.grpc.internal.AbstractStream$TransportState.notifyIfReady()V AbstractStream.java:347 
+    #8 io.grpc.internal.AbstractStream$TransportState.onStreamAllocated()V AbstractStream.java:286 
+    #9 io.grpc.netty.NettyClientStream$TransportState.setHttp2Stream(Lio/netty/handler/codec/http2/Http2Stream;)V NettyClientStream.java:285 
+    #10 io.grpc.netty.NettyClientHandler$5.operationComplete(Lio/netty/channel/ChannelFuture;)V NettyClientHandler.java:639 
+    #11 io.grpc.netty.NettyClientHandler$5.operationComplete(Lio/netty/util/concurrent/Future;)V NettyClientHandler.java:621 
+    #12 io.netty.util.concurrent.DefaultPromise.notifyListener0(Lio/netty/util/concurrent/Future;Lio/netty/util/concurrent/GenericFutureListener;)V DefaultPromise.java:577 
+    #13 io.netty.util.concurrent.DefaultPromise.notifyListeners0(Lio/netty/util/concurrent/DefaultFutureListeners;)V DefaultPromise.java:570 
+    #14 io.netty.util.concurrent.DefaultPromise.notifyListenersNow()V DefaultPromise.java:549 
+    #15 io.netty.util.concurrent.DefaultPromise.notifyListeners()V DefaultPromise.java:490 
+    #16 io.netty.util.concurrent.DefaultPromise.setValue0(Ljava/lang/Object;)Z DefaultPromise.java:615 
+    #17 io.netty.util.concurrent.DefaultPromise.setSuccess0(Ljava/lang/Object;)Z DefaultPromise.java:604 
+    #18 io.netty.util.concurrent.DefaultPromise.trySuccess(Ljava/lang/Object;)Z DefaultPromise.java:104 
+    #19 io.netty.handler.codec.http2.Http2CodecUtil$SimpleChannelPromiseAggregator.tryPromise()Z Http2CodecUtil.java:383 
+    #20 io.netty.handler.codec.http2.Http2CodecUtil$SimpleChannelPromiseAggregator.trySuccess(Ljava/lang/Void;)Z Http2CodecUtil.java:349 
+    #21 io.netty.handler.codec.http2.Http2CodecUtil$SimpleChannelPromiseAggregator.trySuccess(Ljava/lang/Object;)Z Http2CodecUtil.java:261 
+    #22 io.netty.util.internal.PromiseNotificationUtil.trySuccess(Lio/netty/util/concurrent/Promise;Ljava/lang/Object;Lio/netty/util/internal/logging/InternalLogger;)V PromiseNotificationUtil.java:48 
+    #23 io.netty.channel.ChannelOutboundBuffer.safeSuccess(Lio/netty/channel/ChannelPromise;)V ChannelOutboundBuffer.java:717 
+    #24 io.netty.channel.ChannelOutboundBuffer.remove()Z ChannelOutboundBuffer.java:272 
+    #25 io.netty.channel.ChannelOutboundBuffer.removeBytes(J)V ChannelOutboundBuffer.java:352 
+    #26 io.netty.channel.socket.nio.NioSocketChannel.doWrite(Lio/netty/channel/ChannelOutboundBuffer;)V NioSocketChannel.java:431 
+    #27 io.netty.channel.AbstractChannel$AbstractUnsafe.flush0()V AbstractChannel.java:934 
+    #28 io.netty.channel.nio.AbstractNioChannel$AbstractNioUnsafe.flush0()V AbstractNioChannel.java:354 
+    #29 io.netty.channel.AbstractChannel$AbstractUnsafe.flush()V AbstractChannel.java:898 
+    #30 io.netty.channel.DefaultChannelPipeline$HeadContext.flush(Lio/netty/channel/ChannelHandlerContext;)V DefaultChannelPipeline.java:1372 
+    #31 io.netty.channel.AbstractChannelHandlerContext.invokeFlush0()V AbstractChannelHandlerContext.java:750 
+    #32 io.netty.channel.AbstractChannelHandlerContext.invokeFlush()V AbstractChannelHandlerContext.java:742 
+    #33 io.netty.channel.AbstractChannelHandlerContext.flush()Lio/netty/channel/ChannelHandlerContext; AbstractChannelHandlerContext.java:728 
+    #34 io.netty.handler.codec.http2.Http2ConnectionHandler.flush(Lio/netty/channel/ChannelHandlerContext;)V Http2ConnectionHandler.java:189 
+    #35 io.netty.channel.AbstractChannelHandlerContext.invokeFlush0()V AbstractChannelHandlerContext.java:750 
+    #36 io.netty.channel.AbstractChannelHandlerContext.invokeFlush()V AbstractChannelHandlerContext.java:742 
+    #37 io.netty.channel.AbstractChannelHandlerContext.flush()Lio/netty/channel/ChannelHandlerContext; AbstractChannelHandlerContext.java:728 
+    #38 io.netty.channel.DefaultChannelPipeline.flush()Lio/netty/channel/ChannelPipeline; DefaultChannelPipeline.java:967 
+    #39 io.netty.channel.AbstractChannel.flush()Lio/netty/channel/Channel; AbstractChannel.java:242 
+    #40 io.grpc.netty.WriteQueue.flush()V WriteQueue.java:147 
+    #41 io.grpc.netty.WriteQueue$1.run()V WriteQueue.java:46 
+    #42 io.netty.util.concurrent.AbstractEventExecutor.safeExecute(Ljava/lang/Runnable;)V AbstractEventExecutor.java:164 
+    #43 io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(J)Z SingleThreadEventExecutor.java:472 
+    #44 io.netty.channel.nio.NioEventLoop.run()V NioEventLoop.java:500 
+    #45 io.netty.util.concurrent.SingleThreadEventExecutor$4.run()V SingleThreadEventExecutor.java:989 
+    #46 io.netty.util.internal.ThreadExecutorMap$2.run()V ThreadExecutorMap.java:74 
+    #47 io.netty.util.concurrent.FastThreadLocalRunnable.run()V FastThreadLocalRunnable.java:30 
+    #48 java.lang.Thread.run()V Thread.java:830 
+    #49 (Generated Stub) <null> 
+ 
+  Thread T36 (tid=6496, running) created by thread T4 at:
+    #0 pthread_create third_party/llvm/llvm-project/compiler-rt/lib/tsan/rtl/tsan_interceptors_posix.cpp:976:3 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x69ceac)
+    #1 os::create_thread(Thread*, os::ThreadType, unsigned long) <null> (libjvm.so+0x10484c1)
+    #2 java.lang.Thread.start()V Thread.java:799 
+    #3 com.google.apphosting.runtime.anyrpc.AbstractRpcCompatibilityTest.doTestConcurrency(I)V AbstractRpcCompatibilityTest.java:575 
+    #4 com.google.apphosting.runtime.anyrpc.AbstractRpcCompatibilityTest.testConcurrency_LargeRequest()V AbstractRpcCompatibilityTest.java:550 
+    #5 (Generated Stub) <null> 
+    #6 jdk.internal.reflect.NativeMethodAccessorImpl.invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object; NativeMethodAccessorImpl.java:62 
+    #7 jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object; DelegatingMethodAccessorImpl.java:43 
+    #8 java.lang.reflect.Method.invoke(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object; Method.java:566 
+    #9 org.junit.runners.model.FrameworkMethod$1.runReflectiveCall()Ljava/lang/Object; FrameworkMethod.java:57 
+    #10 org.junit.internal.runners.model.ReflectiveCallable.run()Ljava/lang/Object; ReflectiveCallable.java:12 
+    #11 org.junit.runners.model.FrameworkMethod.invokeExplosively(Ljava/lang/Object;[Ljava/lang/Object;)Ljava/lang/Object; FrameworkMethod.java:59 
+    #12 org.junit.internal.runners.statements.InvokeMethod.evaluate()V InvokeMethod.java:17 
+    #13 org.junit.internal.runners.statements.RunBefores.evaluate()V RunBefores.java:26 
+    #14 org.junit.internal.runners.statements.RunAfters.evaluate()V RunAfters.java:27 
+    #15 org.junit.rules.TestWatcher$1.evaluate()V TestWatcher.java:55 
+    #16 org.junit.rules.RunRules.evaluate()V RunRules.java:20 
+    #17 org.junit.runners.BlockJUnit4ClassRunner$1.evaluate()V BlockJUnit4ClassRunner.java:81 
+    #18 org.junit.runners.ParentRunner.runLeaf(Lorg/junit/runners/model/Statement;Lorg/junit/runner/Description;Lorg/junit/runner/notification/RunNotifier;)V ParentRunner.java:327 
+    #19 org.junit.runners.BlockJUnit4ClassRunner.runChild(Lorg/junit/runners/model/FrameworkMethod;Lorg/junit/runner/notification/RunNotifier;)V BlockJUnit4ClassRunner.java:84 
+    #20 org.junit.runners.BlockJUnit4ClassRunner.runChild(Ljava/lang/Object;Lorg/junit/runner/notification/RunNotifier;)V BlockJUnit4ClassRunner.java:57 
+    #21 org.junit.runners.ParentRunner$3.run()V ParentRunner.java:292 
+    #22 org.junit.runners.ParentRunner$1.schedule(Ljava/lang/Runnable;)V ParentRunner.java:73 
+    #23 org.junit.runners.ParentRunner.runChildren(Lorg/junit/runner/notification/RunNotifier;)V ParentRunner.java:290 
+    #24 org.junit.runners.ParentRunner.access$000(Lorg/junit/runners/ParentRunner;Lorg/junit/runner/notification/RunNotifier;)V ParentRunner.java:60 
+    #25 org.junit.runners.ParentRunner$2.evaluate()V ParentRunner.java:270 
+    #26 org.junit.internal.runners.statements.RunBefores.evaluate()V RunBefores.java:26 
+    #27 org.junit.runners.ParentRunner.run(Lorg/junit/runner/notification/RunNotifier;)V ParentRunner.java:370 
+    #28 com.google.testing.junit.runner.internal.junit4.CancellableRequestFactory$CancellableRunner.run(Lorg/junit/runner/notification/RunNotifier;)V CancellableRequestFactory.java:108 
+    #29 org.junit.runner.JUnitCore.run(Lorg/junit/runner/Runner;)Lorg/junit/runner/Result; JUnitCore.java:137 
+    #30 org.junit.runner.JUnitCore.run(Lorg/junit/runner/Request;)Lorg/junit/runner/Result; JUnitCore.java:115 
+    #31 com.google.testing.junit.runner.junit4.JUnit4Runner.run()Lorg/junit/runner/Result; JUnit4Runner.java:104 
+    #32 com.google.testing.junit.runner.RunnerShell$2.run(Ljava/lang/Class;[Ljava/lang/String;)I RunnerShell.java:34 
+    #33 com.google.testing.junit.runner.GoogleTestRunner.runTestsInSuite(Ljava/lang/Class;[Ljava/lang/String;)I GoogleTestRunner.java:200 
+    #34 com.google.testing.junit.runner.GoogleTestRunner.runTestsInSuite(Ljava/lang/String;[Ljava/lang/String;Ljava/lang/ClassLoader;Z)I GoogleTestRunner.java:184 
+    #35 com.google.testing.junit.runner.GoogleTestRunner.main([Ljava/lang/String;)V GoogleTestRunner.java:137 
+    #36 (Generated Stub) <null> 
+    #37 devtools_java_launcher::internal::LauncherMainImpl::JavaMain(JNIEnv_*, std::__tsan::pair<std::__tsan::basic_string<char, std::__tsan::char_traits<char>, std::__tsan::allocator<char> >, devtools_java_launcher::internal::ArgumentEncoding> const&, int, char**, std::__tsan::basic_string<char, std::__tsan::char_traits<char>, std::__tsan::allocator<char> > const&) devtools/java/launcher/run_java-internal.cc:1030:8 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x71e717)
+    #38 operator() devtools/java/launcher/run_java-internal.cc:428:16 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #39 Invoke<(lambda at devtools/java/launcher/run_java-internal.cc:426:7) &, std::__tsan::pair<std::__tsan::string, devtools_java_launcher::internal::ArgumentEncoding> &, int &, char **&, std::__tsan::string &, JNIEnv_ *> third_party/absl/base/internal/invoke.h:153:12 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #40 invoke<(lambda at devtools/java/launcher/run_java-internal.cc:426:7) &, std::__tsan::pair<std::__tsan::string, devtools_java_launcher::internal::ArgumentEncoding> &, int &, char **&, std::__tsan::string &, JNIEnv_ *> third_party/absl/base/internal/invoke.h:180:10 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #41 Apply<jvalue, absl::container_internal::CompressedTuple<(lambda at devtools/java/launcher/run_java-internal.cc:426:7), std::__tsan::pair<std::__tsan::string, devtools_java_launcher::internal::ArgumentEncoding>, int, char **, std::__tsan::string> &, 0UL, 1UL, 2UL, 3UL, 4UL, JNIEnv_ *> third_party/absl/functional/internal/front_binder.h:36:10 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #42 operator()<JNIEnv_ *, jvalue> third_party/absl/functional/internal/front_binder.h:56:12 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #43 __invoke<absl::functional_internal::FrontBinder<(lambda at devtools/java/launcher/run_java-internal.cc:426:7), std::__tsan::pair<std::__tsan::string, devtools_java_launcher::internal::ArgumentEncoding>, int, char **, std::__tsan::string> &, JNIEnv_ *> third_party/crosstool/v18/stable/toolchain/bin/../include/c++/v1/type_traits:3918:1 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #44 __call<absl::functional_internal::FrontBinder<(lambda at devtools/java/launcher/run_java-internal.cc:426:7), std::__tsan::pair<std::__tsan::string, devtools_java_launcher::internal::ArgumentEncoding>, int, char **, std::__tsan::string> &, JNIEnv_ *> third_party/crosstool/v18/stable/toolchain/bin/../include/c++/v1/__functional/invoke.h:30:16 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #45 operator() third_party/crosstool/v18/stable/toolchain/bin/../include/c++/v1/__functional/function.h:221:12 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #46 jvalue std::__tsan::__function::__policy_invoker<jvalue (JNIEnv_*)>::__call_impl<std::__tsan::__function::__default_alloc_func<absl::functional_internal::FrontBinder<devtools_java_launcher::LauncherMain::RunJavaMainInJVMThread() const::$_0, std::__tsan::pair<std::__tsan::basic_string<char, std::__tsan::char_traits<char>, std::__tsan::allocator<char> >, devtools_java_launcher::internal::ArgumentEncoding>, int, char**, std::__tsan::basic_string<char, std::__tsan::char_traits<char>, std::__tsan::allocator<char> > >, jvalue (JNIEnv_*)> >(std::__tsan::__function::__policy_storage const*, JNIEnv_*) third_party/crosstool/v18/stable/toolchain/bin/../include/c++/v1/__functional/function.h:702:16 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x722a39)
+    #47 operator() third_party/crosstool/v18/stable/toolchain/bin/../include/c++/v1/__functional/function.h:834:16 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x734598)
+    #48 operator() third_party/crosstool/v18/stable/toolchain/bin/../include/c++/v1/__functional/function.h:1175:12 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x734598)
+    #49 devtools_java_launcher::internal::UserRequest::Run(thread::Future<devtools_java_launcher::JniResult>*) devtools/java/launcher/launcher-impl.cc:97:19 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x734598)
+    #50 void thread::FutureObjectInternal::ProducerRunner<devtools_java_launcher::JniResult>(thread::FutureObjectInternal*, void*) thread/future/future-inl.h:286:52 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x738585)
+    #51 ProducerWrapper thread/future/future.cc:37:5 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x73c3b1)
+    #52 thread::FutureObjectInternal::Run() thread/future/future.cc:61:3 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x73c3b1)
+    #53 devtools_java_launcher::internal::LauncherImpl::VmThreadRoutine(void*) devtools/java/launcher/launcher-impl.cc:189:14 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x735684)
+ 
+  Thread T24 (tid=6483, running) created by thread T21 at:
+    #0 pthread_create third_party/llvm/llvm-project/compiler-rt/lib/tsan/rtl/tsan_interceptors_posix.cpp:976:3 (376a5944a96225acb3a97f61e6778a4ec3c82048422e4aec0368c2ff748e7a61_020003520650+0x69ceac)
+    #1 os::create_thread(Thread*, os::ThreadType, unsigned long) <null> (libjvm.so+0x10484c1)
+    #2 java.lang.Thread.start()V Thread.java:799 
+    #3 io.netty.util.concurrent.ThreadPerTaskExecutor.execute(Ljava/lang/Runnable;)V ThreadPerTaskExecutor.java:32 
+    #4 io.netty.util.internal.ThreadExecutorMap$1.execute(Ljava/lang/Runnable;)V ThreadExecutorMap.java:57 
+    #5 io.netty.util.concurrent.SingleThreadEventExecutor.doStartThread()V SingleThreadEventExecutor.java:978 
+    #6 io.netty.util.concurrent.SingleThreadEventExecutor.startThread()V SingleThreadEventExecutor.java:947 
+    #7 io.netty.util.concurrent.SingleThreadEventExecutor.execute(Ljava/lang/Runnable;Z)V SingleThreadEventExecutor.java:830 
+    #8 io.netty.util.concurrent.SingleThreadEventExecutor.execute(Ljava/lang/Runnable;)V SingleThreadEventExecutor.java:818 
+    #9 io.netty.channel.AbstractChannel$AbstractUnsafe.register(Lio/netty/channel/EventLoop;Lio/netty/channel/ChannelPromise;)V AbstractChannel.java:471 
+    #10 io.netty.channel.SingleThreadEventLoop.register(Lio/netty/channel/ChannelPromise;)Lio/netty/channel/ChannelFuture; SingleThreadEventLoop.java:87 
+    #11 io.netty.channel.SingleThreadEventLoop.register(Lio/netty/channel/Channel;)Lio/netty/channel/ChannelFuture; SingleThreadEventLoop.java:81 
+    #12 io.netty.bootstrap.AbstractBootstrap.initAndRegister()Lio/netty/channel/ChannelFuture; AbstractBootstrap.java:323 
+    #13 io.netty.bootstrap.AbstractBootstrap.register()Lio/netty/channel/ChannelFuture; AbstractBootstrap.java:227 
+    #14 io.grpc.netty.NettyClientTransport.start(Lio/grpc/internal/ManagedClientTransport$Listener;)Ljava/lang/Runnable; NettyClientTransport.java:260 
+    #15 io.grpc.internal.ForwardingConnectionClientTransport.start(Lio/grpc/internal/ManagedClientTransport$Listener;)Ljava/lang/Runnable; ForwardingConnectionClientTransport.java:34 
+    #16 io.grpc.internal.ForwardingConnectionClientTransport.start(Lio/grpc/internal/ManagedClientTransport$Listener;)Ljava/lang/Runnable; ForwardingConnectionClientTransport.java:34 
+    #17 io.grpc.internal.InternalSubchannel.startNewTransport()V InternalSubchannel.java:259 
+    #18 io.grpc.internal.InternalSubchannel$2.run()V InternalSubchannel.java:201 
+    #19 io.grpc.SynchronizationContext.drain()V SynchronizationContext.java:95 
+    #20 io.grpc.SynchronizationContext.execute(Ljava/lang/Runnable;)V SynchronizationContext.java:127 
+    #21 io.grpc.internal.ManagedChannelImpl$NameResolverListener.onResult(Lio/grpc/NameResolver$ResolutionResult;)V ManagedChannelImpl.java:1869 
+    #22 io.grpc.internal.DnsNameResolver$Resolve.run()V DnsNameResolver.java:333 
+    #23 java.util.concurrent.ThreadPoolExecutor.runWorker(Ljava/util/concurrent/ThreadPoolExecutor$Worker;)V ThreadPoolExecutor.java:1128 
+    #24 java.util.concurrent.ThreadPoolExecutor$Worker.run()V ThreadPoolExecutor.java:628 
+    #25 java.lang.Thread.run()V Thread.java:830 
+    #26 (Generated Stub) <null> 
+ 
+SUMMARY: ThreadSanitizer: data race MessageFramer.java:320 in io.grpc.internal.MessageFramer.close()V
+```

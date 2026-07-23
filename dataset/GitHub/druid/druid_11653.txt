@@ -1,0 +1,21 @@
+Overlord cannot elect a leader because of exception when reacquiring locks.
+### Affected Version
+
+0.21.1
+
+### Description
+
+```
+2021-09-01T00:27:08,408 ERROR [LeaderSelector[/druid/overlord/_OVERLORD]] org.apache.druid.curator.discovery.CuratorDruidLeaderSelector - listener becomeLeader() failed. Unable to become leader: {class=org.apache.druid.curator.discovery.CuratorDruidLeaderSelector, exceptionType=class java.lang.RuntimeException, exceptionMessage=org.apache.druid.java.util.common.ISE: Could not reacquire lock on interval[2021-08-29T00:00:00.000Z/2021-08-30T00:00:00.000Z] version[2021-08-31T23:32:28.782Z] for task: index_parallel_mytable_aplllohg_2021-08-31T13:15:38.699Z}
+java.lang.RuntimeException: org.apache.druid.java.util.common.ISE: Could not reacquire lock on interval[2021-08-29T00:00:00.000Z/2021-08-30T00:00:00.000Z] version[2021-08-31T23:32:28.782Z] for task: index_parallel_mytable_aplllohg_2021-08-31T13:15:38.699Z
+    at org.apache.druid.indexing.overlord.TaskMaster$1.becomeLeader(TaskMaster.java:159) ~[druid-indexing-service-0.21.1.jar:0.21.1]
+    at org.apache.druid.curator.discovery.CuratorDruidLeaderSelector$1.isLeader(CuratorDruidLeaderSelector.java:97) [druid-server-0.21.1.jar:0.21.1]
+    at org.apache.curator.framework.recipes.leader.LeaderLatch$9.apply(LeaderLatch.java:702) [curator-recipes-4.3.0.jar:4.3.0]
+    at org.apache.curator.framework.recipes.leader.LeaderLatch$9.apply(LeaderLatch.java:698) [curator-recipes-4.3.0.jar:4.3.0]
+    at org.apache.curator.framework.listen.ListenerContainer$1.run(ListenerContainer.java:100) [curator-framework-4.3.0.jar:4.3.0]
+    at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149) [?:1.8.0_302]
+    at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624) [?:1.8.0_302]
+    at java.lang.Thread.run(Thread.java:748) [?:1.8.0_302]
+```
+
+The error above completely prevented any Overlord instances to become a leader. Is this error so important that Overlord cannot perform election?

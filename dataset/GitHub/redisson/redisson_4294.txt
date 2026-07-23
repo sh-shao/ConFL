@@ -1,0 +1,67 @@
+RTopic.addListener When the redis network is disconnected, when the first failure occurs, the subsequent failures will occur after the redis network connection
+<!--
+Try Redisson PRO https://redisson.pro with ultra-fast performance and support by SLA.
+-->
+
+**Expected behavior**
+RTopic.addListener can success after network recovery.
+**Actual behavior**
+RTopic.addListener will be fail after network recovery.
+**Steps to reproduce or test case**
+1. Start up the project
+2. Disconnect the redis network
+3. Request method RTopic.addListener
+4. Errors will occur [org.redisson.client.RedisException: Unexpected exception while processing command]
+![image](https://user-images.githubusercontent.com/4274520/168207234-2ae4a84b-7846-43ea-94ed-afc393f3929a.png)
+![image](https://user-images.githubusercontent.com/4274520/168207369-d83ef572-dad9-443f-b925-ccc6c3ff6d91.png)
+
+6. Restore connection to the redis network
+7. Request method RTopic.addListener
+8. Errors will occur [org.redisson.client.RedisTimeoutException: Unable to acquire subscription lock after 14500ms. Increase 'subscriptionsPerConnection' and/or 'subscriptionConnectionPoolSize' parameters.]
+![image](https://user-images.githubusercontent.com/4274520/168207418-ea147b13-538d-4fca-acbc-9cb4f1363189.png)
+
+10. It will never succeed
+11. Because PublishSubscribeService.subscribe lock.acquire fail.The lock.counter==0.
+12. 
+![image](https://user-images.githubusercontent.com/4274520/168206894-0c230958-9c70-4130-85c3-e8724b7662bc.png)
+
+
+
+**Redis version**
+13.2.3
+**Redisson version**
+6.17.1
+**Redisson configuration**
+```
+  @Bean(destroyMethod = "shutdown")
+  public RedissonClient redisson(RedissonProperties redissonProperties, RedisProperties redisProperties) throws IOException {
+    Method timeoutMethod = ReflectionUtils.findMethod(RedisProperties.class, "getTimeout");
+    Object timeoutValue = ReflectionUtils.invokeMethod(timeoutMethod, redisProperties);
+    int timeout;
+    if (null == timeoutValue) {
+      timeout = 10000;
+    } else if (!(timeoutValue instanceof Integer)) {
+      Method millisMethod = ReflectionUtils.findMethod(timeoutValue.getClass(), "toMillis");
+      timeout = ((Long) ReflectionUtils.invokeMethod(millisMethod, timeoutValue)).intValue();
+    } else {
+      timeout = (Integer) timeoutValue;
+    }
+
+    Config config = new Config();
+    String prefix = REDIS_PROTOCOL_PREFIX;
+    Method method = ReflectionUtils.findMethod(RedisProperties.class, "isSsl");
+    if (method != null && (Boolean) ReflectionUtils.invokeMethod(method, redisProperties)) {
+      prefix = REDISS_PROTOCOL_PREFIX;
+    }
+    config.useSingleServer()
+        .setAddress(prefix + redisProperties.getHost() + ":" + redisProperties.getPort())
+        .setConnectTimeout(timeout)
+        .setTimeout(10000)
+        .setDatabase(redisProperties.getDatabase())
+        .setPassword(redisProperties.getPassword())
+        .setSubscriptionsPerConnection(5000)
+        .setSubscriptionConnectionPoolSize(5000)
+        .setConnectionPoolSize(500);
+    config.setCodec(new JsonJacksonCodec());
+    return Redisson.create(config);
+  }```

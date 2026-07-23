@@ -1,0 +1,62 @@
+[Bug] Multiple deadlocks were detected during the client shutdown process.
+### Before Creating the Bug Report
+
+- [X] I found a bug, not just asking a question, which should be created in [GitHub Discussions](https://github.com/apache/rocketmq/discussions).
+
+- [X] I have searched the [GitHub Issues](https://github.com/apache/rocketmq/issues) and [GitHub Discussions](https://github.com/apache/rocketmq/discussions)  of this repository and believe that this is not a duplicate.
+
+- [X] I have confirmed that this bug belongs to the current repository, not other repositories of RocketMQ.
+
+
+### Runtime platform environment
+
+4.19.90-23-42.v2101.ky10.x86_64
+
+### RocketMQ version
+
+5.2.0
+
+### JDK Version
+
+openjdk 1.8
+
+### Describe the Bug
+
+During the client shutdown process, deadlocks were detected, which resolved after a period of time. 
+This phenomenon was observed using jvisualvm and jconsole. 
+The deadlock occurred between the client shutdown thread and the Netty worker threads.
+Code analysis: 
+
+1. `NettyRemotingClient` holds the `lockChannelTables` lock, which is responsible for guarding access to `channelTables`. `channelTables` caches all channels encapsulated in `ChannelWrapper`.
+2. The inner class ChannelWrapper within NettyRemotingClient` holds a read-write lock `lock`, responsible for concurrent access to the channel.
+3. The inner class `NettyConnectManageHandler` in `NettyRemotingClient` is responsible for handling events like close, connect, and channelInactive. When a channel becomes unavailable, it executes the `close` or `channelInactive` methods to remove the channel from `channelTables`.
+
+<img width="1057" alt="截屏2024-07-05 14 11 28" src="https://github.com/apache/rocketmq/assets/11780013/e42afcc4-9faa-4a2b-a495-44b2cd6eb550">
+<img width="1180" alt="截屏2024-07-05 14 15 06" src="https://github.com/apache/rocketmq/assets/11780013/aabc96c2-843a-4133-bbc8-81ac2d026d65">
+<img width="1197" alt="截屏2024-07-05 14 19 16" src="https://github.com/apache/rocketmq/assets/11780013/7e47c007-ac4d-43d5-acad-3d8890ae6e89">
+<img width="1431" alt="截屏2024-07-05 14 26 54" src="https://github.com/apache/rocketmq/assets/11780013/9c381594-956f-4859-90eb-9cb81ff592c4">
+The execution path where deadlock occurs.
+
+<img width="858" alt="截屏2024-07-05 15 38 50" src="https://github.com/apache/rocketmq/assets/11780013/c6338a51-e19a-4da8-9e84-5ab564d071c8">
+
+
+
+
+### Steps to Reproduce
+
+![WechatIMG49](https://github.com/apache/rocketmq/assets/11780013/233b7092-9e42-478d-a78f-770d0cbb41e6)
+1.Creating multiple consumer clients and shutting them down one by one. The more clients are created, the more likely a deadlock will be triggered.
+2.Open jconsole and continuously click on deadlock detection.[](url)
+
+### What Did You Expect to See?
+
+![WechatIMG49](https://github.com/apache/rocketmq/assets/11780013/233b7092-9e42-478d-a78f-770d0cbb41e6)
+deadlocks were detected.
+
+### What Did You See Instead?
+
+deadlocks were detected.
+
+### Additional Context
+
+_No response_

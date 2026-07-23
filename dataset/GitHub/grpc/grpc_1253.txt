@@ -1,0 +1,14 @@
+ClientCallImpl operations race with Context cancellation.
+With be6008666e9012a35f77defaab8e95730b81b838, we don't create the stream when the Context is cancelled, so the following request(), sendMessage(), halfClose() will encounter an IllegalStateException like:
+
+```
+java.lang.IllegalStateException: Not started
+    at com.google.common.base.Preconditions.checkState(Preconditions.java:178)
+    at io.grpc.internal.ClientCallImpl.request(ClientCallImpl.java:257)
+    at io.grpc.ForwardingClientCall.request(ForwardingClientCall.java:50)
+    at io.grpc.stub.ClientCalls.startCall(ClientCalls.java:199)
+    at io.grpc.stub.ClientCalls.asyncUnaryRequestCall(ClientCalls.java:173)
+    at io.grpc.stub.ClientCalls.futureUnaryCall(ClientCalls.java:135)
+```
+
+@louiscryan, FYI, I'll send you a PR to fix it soon.

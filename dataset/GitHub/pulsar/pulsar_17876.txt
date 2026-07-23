@@ -1,0 +1,35 @@
+[Bug] TransactionCoordinatorClientImpl.start() hangs forever
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+Pulsar Java Client 2.10.0
+Pulsar 2.10.0
+
+### Minimal reproduce step
+
+Enable the transaction in Pulsar 2.10.0 docker. Create a `PulsarClient`. Then we may see the `TransactionCoordinatorClientImpl.start()` hangs and block the whole process.
+
+### What did you expect to see?
+
+`TransactionCoordinatorClientImpl.start()` shouldn't wait for a long time.
+
+### What did you see instead?
+
+`TransactionCoordinatorClientImpl.start()` block the execution and nothing has showed.
+
+<img width="1063" alt="image" src="https://user-images.githubusercontent.com/1761698/192848499-62a664f5-f594-4b14-b5c5-c467f9906e87.png">
+
+
+### Anything else?
+
+The jstack file.
+[195.log](https://github.com/apache/pulsar/files/9667518/195.log)
+
+
+### Are you willing to submit a PR?
+
+- [ ] I'm willing to submit a PR!

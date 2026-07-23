@@ -1,0 +1,15 @@
+Redisson cluster Read connections issue
+I use Redisson 2.2 to implement distributed lock in my project and use Redis cluster.  And I found the Redisson client will create new connection and do not use the connection in the pool while invoke some readOnly methods which execute evalRead. So when I start to run the test it will produce lots of TIME_WAIT connection on my server. The followings are some logs on my server.
+`
+12/24/15 08:59:06:949: [SimpleProcessor-0]: DEBUG org.redisson.cluster.ClusterConnectionManager - slot 8978 for USER_WALLETS-test
+`
+`
+12/24/15 08:59:06:949: [nioEventLoopGroup-2-2]: DEBUG org.redisson.command.CommandSyncService - getting connection for command (EVAL) from slot NodeSource [slot=8978, addr=null, redirect=null] using node /192.168.1.51:2500
+`
+`
+12/24/15 08:59:06:950: [nioEventLoopGroup-2-6]: DEBUG org.redisson.connection.ClientConnectionsEntry - new connection created: RedisConnection [redisClient=RedisClient [addr=/168.168.1.54:2000], channel=[id: 0xc239f9bb, /192.168.1.11:43560 => /192.168.1.54:2000]]
+`
+`
+12/24/15 08:59:06:951: [nioEventLoopGroup-2-4]: DEBUG org.redisson.command.CommandSyncService - getting connection for command (EVAL) from slot NodeSource [slot=8978, addr=/192.168.1.54:2000, redirect=MOVED] using node /168.168.1.54:2000
+`
+The codes are very spectacular and I only understand a bit. But I doubt whether the client get the connection from the pool but also create a new one?

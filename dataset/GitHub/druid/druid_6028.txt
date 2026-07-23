@@ -1,0 +1,49 @@
+Error in SqlMetadataRuleManagerTest
+```
+Tests run: 4, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 22.619 sec <<< FAILURE! - in io.druid.metadata.SQLMetadataRuleManagerTest
+testMultipleStopAndStart(io.druid.metadata.SQLMetadataRuleManagerTest)  Time elapsed: 20.698 sec  <<< ERROR!
+org.skife.jdbi.v2.exceptions.CallbackFailedException: 
+org.skife.jdbi.v2.exceptions.UnableToExecuteStatementException: java.sql.SQLTransactionRollbackException: A lock could not be obtained due to a deadlock, cycle of locks and waiters is:
+Lock : ROW, SYSCOLUMNS, (5,12)
+  Waiting XID : {237, X} , APP, DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules
+  Granted XID : {217, S} 
+Lock : TABLE, DRUIDTESTC0DD9B47C4DF453DAEBA2ACA4613783E_RULES, Tablelock
+  Waiting XID : {217, IS} , APP, SELECT r.dataSource, r.payload FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules r INNER JOIN(SELECT dataSource, max(version) as version FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules GROUP BY dataSource) ds ON r.datasource = ds.datasource and r.version = ds.version
+  Granted XID : {237, X} 
+. The selected victim is XID : 237. [statement:"DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules", located:"DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules", rewritten:"DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules", arguments:{ positional:{}, named:{}, finder:[]}]
+	at io.druid.metadata.SQLMetadataRuleManagerTest.dropTable(SQLMetadataRuleManagerTest.java:209)
+	at io.druid.metadata.SQLMetadataRuleManagerTest.cleanup(SQLMetadataRuleManagerTest.java:204)
+Caused by: org.skife.jdbi.v2.exceptions.UnableToExecuteStatementException: 
+java.sql.SQLTransactionRollbackException: A lock could not be obtained due to a deadlock, cycle of locks and waiters is:
+Lock : ROW, SYSCOLUMNS, (5,12)
+  Waiting XID : {237, X} , APP, DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules
+  Granted XID : {217, S} 
+Lock : TABLE, DRUIDTESTC0DD9B47C4DF453DAEBA2ACA4613783E_RULES, Tablelock
+  Waiting XID : {217, IS} , APP, SELECT r.dataSource, r.payload FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules r INNER JOIN(SELECT dataSource, max(version) as version FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules GROUP BY dataSource) ds ON r.datasource = ds.datasource and r.version = ds.version
+  Granted XID : {237, X} 
+. The selected victim is XID : 237. [statement:"DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules", located:"DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules", rewritten:"DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules", arguments:{ positional:{}, named:{}, finder:[]}]
+	at io.druid.metadata.SQLMetadataRuleManagerTest.dropTable(SQLMetadataRuleManagerTest.java:209)
+	at io.druid.metadata.SQLMetadataRuleManagerTest.cleanup(SQLMetadataRuleManagerTest.java:204)
+Caused by: java.sql.SQLTransactionRollbackException: 
+A lock could not be obtained due to a deadlock, cycle of locks and waiters is:
+Lock : ROW, SYSCOLUMNS, (5,12)
+  Waiting XID : {237, X} , APP, DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules
+  Granted XID : {217, S} 
+Lock : TABLE, DRUIDTESTC0DD9B47C4DF453DAEBA2ACA4613783E_RULES, Tablelock
+  Waiting XID : {217, IS} , APP, SELECT r.dataSource, r.payload FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules r INNER JOIN(SELECT dataSource, max(version) as version FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules GROUP BY dataSource) ds ON r.datasource = ds.datasource and r.version = ds.version
+  Granted XID : {237, X} 
+. The selected victim is XID : 237.
+	at io.druid.metadata.SQLMetadataRuleManagerTest.dropTable(SQLMetadataRuleManagerTest.java:209)
+	at io.druid.metadata.SQLMetadataRuleManagerTest.cleanup(SQLMetadataRuleManagerTest.java:204)
+Caused by: org.apache.derby.iapi.error.StandardException: 
+A lock could not be obtained due to a deadlock, cycle of locks and waiters is:
+Lock : ROW, SYSCOLUMNS, (5,12)
+  Waiting XID : {237, X} , APP, DROP TABLE druidTestc0dd9b47c4df453daeba2aca4613783e_rules
+  Granted XID : {217, S} 
+Lock : TABLE, DRUIDTESTC0DD9B47C4DF453DAEBA2ACA4613783E_RULES, Tablelock
+  Waiting XID : {217, IS} , APP, SELECT r.dataSource, r.payload FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules r INNER JOIN(SELECT dataSource, max(version) as version FROM druidTestc0dd9b47c4df453daeba2aca4613783e_rules GROUP BY dataSource) ds ON r.datasource = ds.datasource and r.version = ds.version
+  Granted XID : {237, X} 
+. The selected victim is XID : 237.
+	at io.druid.metadata.SQLMetadataRuleManagerTest.dropTable(SQLMetadataRuleManagerTest.java:209)
+	at io.druid.metadata.SQLMetadataRuleManagerTest.cleanup(SQLMetadataRuleManagerTest.java:204)
+```

@@ -1,0 +1,41 @@
+RedissonLock locks up
+Under heavy use on production, Redisson's locks get all locked up, and the application stalls. I'm using Redisson 1.1.5
+
+I have 1 thread locked trying to release a lock:
+
+> Thread 18640: (state = BLOCKED)
+> - java.lang.Object.wait(long) @bci=0 (Compiled frame; information may be imprecise)
+> - java.lang.Object.wait(long, int) @bci=58, line=461 (Compiled frame)
+> - io.netty.util.concurrent.DefaultPromise.await0(long, boolean) @bci=137, line=361 (Compiled frame)
+> - io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly(long, java.util.concurrent.TimeUnit) @bci=7, line=312 (Compiled frame)
+> - com.lambdaworks.redis.RedisAsyncConnection.await(io.netty.util.concurrent.Future, long, java.util.concurrent.TimeUnit) @bci=4, line=1231 (Compiled frame)
+> - com.lambdaworks.redis.RedisConnection.await(io.netty.util.concurrent.Future) @bci=13, line=864 (Compiled frame)
+> - com.lambdaworks.redis.RedisConnection.multi() @bci=8, line=408 (Compiled frame)
+> - org.redisson.RedissonLock.unlock(com.lambdaworks.redis.RedisConnection) @bci=8, line=391 (Compiled frame)
+> - org.redisson.RedissonLock.access$300(org.redisson.RedissonLock, com.lambdaworks.redis.RedisConnection) @bci=2, line=45 (Compiled frame)
+> - org.redisson.RedissonLock$4.execute(com.lambdaworks.redis.RedisConnection) @bci=84, line=374 (Compiled frame)
+> - org.redisson.RedissonLock$4.execute(com.lambdaworks.redis.RedisConnection) @bci=2, line=363 (Compiled frame)
+> - org.redisson.connection.MasterSlaveConnectionManager.write(org.redisson.async.SyncOperation, int) @bci=7, line=255 (Compiled frame)
+> - org.redisson.connection.MasterSlaveConnectionManager.write(org.redisson.async.SyncOperation) @bci=3, line=248 (Compiled frame)
+> - org.redisson.RedissonLock.unlock() @bci=12, line=363 (Compiled frame)
+
+Also of note, I have about 30 other threads locked awaiting for a lock (a different one from the one used by the previous thread).
+
+I checked the threads with jstack, here is the relevant output:
+
+> Thread 15416: (state = BLOCKED)
+> - java.lang.Object.wait(long) @bci=0 (Compiled frame; information may be imprecise)
+> - java.lang.Object.wait() @bci=2, line=503 (Interpreted frame)
+> - io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly() @bci=31, line=292 (Interpreted frame)
+> - io.netty.util.concurrent.DefaultPromise.awaitUninterruptibly() @bci=1, line=31 (Interpreted frame)
+> - org.redisson.RedissonLock.lockInterruptibly(long, java.util.concurrent.TimeUnit) @bci=8, line=233 (Interpreted frame)
+> - org.redisson.RedissonLock.lockInterruptibly() @bci=5, line=226 (Interpreted frame)
+> - org.redisson.RedissonLock.lock() @bci=1, line=206 (Interpreted frame)
+
+I checked Redis's state:
+
+> $ redis-cli
+> 127.0.0.1:6379> keys *
+> 1) "\"betCreation\""
+
+this key is the one corresponding to the thread blocked trying to release a lock. The other threads, that are waiting for a separate lock are locked even though there is no-one taking up such lock....

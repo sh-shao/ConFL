@@ -1,0 +1,10 @@
+groupBy v2: Deadlock on deeply nested subqueries
+Deeply nested groupBys can cause deadlocks, because they require a separate merge buffer on the broker for each layer beyond the first layer of the groupBy. Since the merge buffers are limited in number and are acquired one-by-one, two problems can occur:
+
+- Case 1: a nested groupBy needs X buffers but numMergeBuffers < X, so it can never get what it needs
+- Case 2: two nested groupBys each need X buffers, but numMergeBuffers < X * 2 - 1, so it's possible for them to deadlock (both might get X - 1 buffers and then neither of them can get the final buffer).
+
+Better behavior would be:
+
+- Case 1: the query should fail
+- Case 2: buffer acquisition should be atomic, so the queries can proceed without deadlocks

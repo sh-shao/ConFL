@@ -1,0 +1,4 @@
+Clear pending messages when unregistering message consumer
+Currently the message consumer, keep the pending messages (accumulated when the consumer was paused) after unregistration. There can be some races that the consumer is resumed after unregistration (user issue) and the pending messages will be processed and it results in internal failures.
+
+Instead the pending messages should be cleared on unregistration and the discarded messages processed by the internal discard handler.

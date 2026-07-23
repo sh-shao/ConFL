@@ -1,0 +1,9 @@
+Report a possible race issue
+Hi, Developers of facebook/presto,
+
+I am writing to report a race issue on use of ConcurrentHashMap. The issue is reported by our tool in an automatic way. Although manually confirmed, it would be a false positive, given we do not know the specification of the program. We would very appreciate if you could check below for details and confirm with us whether it is a real problem. For more information, please refer to our website: http://sav.sutd.edu.sg/?page_id=2845
+
+File: facebook/presto/presto-blackhole/src/main/java/com/facebook/presto/plugin/blackhole/BlackHoleMetadata.java
+Location: Line (149/150,172/136)
+Description: 
+The remove-then-put operations on "tables" in line 149 and 150 are guarded by the lock "tables". If the intention is to guarantee the atomicity of the remove-then-put operations, then the write operations in line 136, 172 may break this atomicity. Relying on the ConcurrentHashMap to ensure exclusive access is dangerous since ConcurrentHashMap has no guarantee of exclusive access.

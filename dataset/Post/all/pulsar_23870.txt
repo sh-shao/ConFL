@@ -1,0 +1,45 @@
+[Bug] PIP-379 Key_Shared implementation can deliver messages out-of-order due to racecondition when a hash gets unblocked
+### Search before asking
+
+- [x] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Read release policy
+
+- [x] I understand that unsupported versions don't get bug fixes. I will attempt to reproduce the issue on a supported version of Pulsar client and Pulsar broker.
+
+
+### Version
+
+4.0.0, 4.0.1, 4.0.2
+
+### Minimal reproduce step
+
+It was possible to reproduce the issue in a test case by disabling broker cache and by setting dispatcher retry backoff and keySharedUnblockingIntervalMs to 0. 
+```
+        conf.setManagedLedgerCacheSizeMB(0);
+        conf.setManagedLedgerMaxReadsInFlightSizeInMB(0);
+        conf.setDispatcherRetryBackoffInitialTimeInMs(0);
+        conf.setDispatcherRetryBackoffMaxTimeInMs(0);
+        conf.setKeySharedUnblockingIntervalMs(0);
+```
+The test case is
+https://github.com/lhotari/pulsar/blob/caac334465ca3de9a87e93a13b8fee377a2a467b/pulsar-broker/src/test/java/org/apache/pulsar/client/api/KeySharedSubscriptionDisabledBrokerCacheTest.java
+
+The problem doesn't reproduce in testing with the default configuration when the retry backoff and keySharedUnblockingIntervalMs are set to default. However, the test reveals a race condition that needs to be addressed.  
+
+### What did you expect to see?
+
+Messages should be delivered in order, also when retry backoff and keySharedUnblockingIntervalMs is set to 0.
+
+### What did you see instead?
+
+There are message ordering issues in 25%-40% of the test runs.
+
+### Anything else?
+
+The problem seems to be a race condition of the hash getting unblocked while sending of entries is in progress.
+
+### Are you willing to submit a PR?
+
+- [x] I'm willing to submit a PR!

@@ -1,0 +1,27 @@
+Dead Locks Happen in lock() Process
+when heavy concurrency happens in my application, a few lock requests will "sink" without any responses, even after the lock lease time has passed. All of these requests wait at `RedissonLock.lockInterruptibly()`.The exact position is `RedissonLock.get()` after `RedissonLock.subscribe()`. 
+
+In my opinion, this may be due to a thread removes the netty listener which is used by another thread. It can happen in this way: 
+1. Thread A is in the loop of getting the lock after subscription.
+2. Thread B has also applied subscription and waits for result.
+3. Thread A gets the lock very soon and enters  `RedissonLock.unsubscribe()`. In this step, it possibly removes all the listeners on the same channel, which includes the listener used by Thread B. It causes Thread B can never get subscription response and hang on forever.
+
+The similar issue is at [https://github.com/mrniko/redisson/pull/93]. But I think it is not solved completely.
+
+Also I suggest  to apply the ttl algorithm to `RedissonLock.get()` because this step can cost some time. And if it has a timeout, dead lock can be prevented in a work-around way.
+
+This is the thread dump when dead lock happens:
+`"http-nio-8001-exec-567" #5935 daemon prio=5 os_prio=0 tid=0x00007f15f81ca000 nid=0x6b3e waiting on condition [0x00007f154468a000]
+   java.lang.Thread.State: WAITING (parking)
+    at sun.misc.Unsafe.park(Native Method)
+    - parking to wait for  <0x00000000bf468fc8> (a java.util.concurrent.CountDownLatch$Sync)
+    at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+    at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+    at java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly(AbstractQueuedSynchronizer.java:997)
+    at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(AbstractQueuedSynchronizer.java:1304)
+    at java.util.concurrent.CountDownLatch.await(CountDownLatch.java:231)
+    at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:95)
+    at org.redisson.RedissonObject.get(RedissonObject.java:55)
+    at org.redisson.RedissonLock.lockInterruptibly(RedissonLock.java:113)
+    at org.redisson.RedissonLock.lock(RedissonLock.java:92)
+        ...`

@@ -1,0 +1,42 @@
+Deadlock with TransportSet
+Hello,
+
+I was testing Grpc with RoundRobinLB and a custom NameResolver when this deadlock happened:
+
+> Found one Java-level deadlock:
+> 
+> "grpc-timer-0":
+>   waiting to lock monitor 0x00007fa1b00062c8 (object 0x00000007397d7f88, a java.lang.Object),
+>   which is held by "main"
+> "main":
+>   waiting to lock monitor 0x00007fa1800087f8 (object 0x00000007397d7e00, a java.lang.Object),
+>   which is held by "grpc-timer-0"
+> 
+> "grpc-timer-0":
+>   at io.grpc.internal.DelayedClientTransport.hasPendingStreams(DelayedClientTransport.java:284)
+> - waiting to lock <0x00000007397d7f88> (a java.lang.Object)
+>   at io.grpc.internal.TransportSet$1EndOfCurrentBackoff.run(TransportSet.java:246)
+> - locked <0x00000007397d7e00> (a java.lang.Object)
+>   at io.grpc.internal.LogExceptionRunnable.run(LogExceptionRunnable.java:56)
+>   at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511)
+>   at java.util.concurrent.FutureTask.run(FutureTask.java:266)
+>   at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.access$201(ScheduledThreadPoolExecutor.java:180)
+>   at java.util.concurrent.ScheduledThreadPoolExecutor$ScheduledFutureTask.run(ScheduledThreadPoolExecutor.java:293)
+>   at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1142)
+>   at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:617)
+>   at java.lang.Thread.run(Thread.java:745)
+> 
+> "main":
+>   at io.grpc.internal.InUseStateAggregator.updateObjectInUse(InUseStateAggregator.java:50)
+> - waiting to lock <0x00000007397d7e00> (a java.lang.Object)
+>   at io.grpc.internal.TransportSet$BaseTransportListener.transportInUse(TransportSet.java:357)
+>   at io.grpc.internal.DelayedClientTransport.newStream(DelayedClientTransport.java:128)
+> - locked <0x00000007397d7f88> (a java.lang.Object)
+>   at io.grpc.internal.ClientCallImpl.start(ClientCallImpl.java:214)
+>   at io.grpc.stub.ClientCalls.startCall(ClientCalls.java:273)
+>   at io.grpc.stub.ClientCalls.asyncUnaryRequestCall(ClientCalls.java:252)
+>   at io.grpc.stub.ClientCalls.futureUnaryCall(ClientCalls.java:189)
+>   at io.grpc.stub.ClientCalls.blockingUnaryCall(ClientCalls.java:135)
+>   at [...]remote.TestGrpc$TestBlockingStub.sayHello(TestGrpc.java:156)
+
+I don't know if it may relate to my own code or if the issue is on grpc side.

@@ -1,0 +1,4 @@
+OkHttpClientTransport.onGoAway() races with startPendingStreams()
+onGoAway has two phases: do things necessary under lock and final cleanup. In the first phase it collects the streams to terminate in the second and sets goAway.
+
+startPendingStreams() does not observe goAway and also creates new streams that should be failed due to the goAway. From an initial look, it seems it would be best to remove failPendingStreams() and simply integrate its two phases into onGoAway()'s two phases; that is, when holding the lock in onGoAway, replace pendingStreams with an empty list, and then when not holding the lock call transportReportStatus

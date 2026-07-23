@@ -1,0 +1,11 @@
+Possible race-condition in RemoteService
+Race-condition during ack checking is possible. For example, ack timeout = 1000 ms:
+1. worker receives Request in 999 ms sends ack, but it comes in 1010ms or something like that.
+2. client checks ack in 1000 ms and throws RemoteServiceAckTimeoutException
+3. worker invokes method
+
+To solve this problem `ackObject` was introduced. Worker or client set it to 1 via `SETNX` command. Worker set it during ack sending. Client during ack receiving.
+
+Client check ackObject only if ack timeout has occurred. If client can't set it means that worker have done it already. So client should poll an element from queue again.
+
+If worker can't set ackObject then it means that ack timeout already occurred on client side and invocation should skipped.

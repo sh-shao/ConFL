@@ -1,0 +1,32 @@
+ConcurrentModificationException in clustered eventBus
+### Version
+
+vertx-core 4.1.2
+vertx-hazelcast 4.1.2
+
+### Context
+
+After the below exception, eventbus do not send portion of message(s). NO exception throw (only log).
+In case of EventBus.request, fired `io.vertx.core.eventbus.ReplyException: Timed out after waiting 30000(ms) for a reply.`
+
+```
+io.netty.util.concurrent.AbstractEventExecutor - A task raised an exception. Task: io.vertx.core.eventbus.impl.clustered.Serializer$$Lambda$1657/0x000000080120acd8@76f060f6
+java.util.ConcurrentModificationException: null
+	at java.util.HashMap.computeIfAbsent(HashMap.java:1225) ~[?:?]
+	at io.vertx.core.eventbus.impl.clustered.Serializer.queue(Serializer.java:64) ~[vertx-core-4.1.2.jar:4.1.2]
+	at io.vertx.core.eventbus.impl.clustered.Serializer.lambda$queue$1(Serializer.java:67) ~[vertx-core-4.1.2.jar:4.1.2]
+	at io.netty.util.concurrent.AbstractEventExecutor.safeExecute(AbstractEventExecutor.java:164) [netty-common-4.1.65.Final.jar:4.1.65.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor.runAllTasks(SingleThreadEventExecutor.java:472) [netty-common-4.1.65.Final.jar:4.1.65.Final]
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:500) [netty-transport-4.1.65.Final.jar:4.1.65.Final]
+	at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:989) [netty-common-4.1.65.Final.jar:4.1.65.Final]
+	at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74) [netty-common-4.1.65.Final.jar:4.1.65.Final]
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30) [netty-common-4.1.65.Final.jar:4.1.65.Final]
+	at java.lang.Thread.run(Thread.java:832) [?:?]
+```
+
+
+### Do you have a reproducer?
+
+I don't have a simple reproducer (part of high concurrency mesh of microservice), but I think thats make sense: 
+
+https://github.com/eclipse-vertx/vert.x/blob/f3dffc1c9af1c2fad9c7a3acc2fa506091018d57/src/main/java/io/vertx/core/eventbus/impl/clustered/Serializer.java#L37-L43

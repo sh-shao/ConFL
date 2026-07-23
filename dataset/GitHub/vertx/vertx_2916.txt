@@ -1,0 +1,4 @@
+HTTP event handler should not be called when holding a lock
+We still have event handlers that are called while holding a lock which can lead to deadlocks.
+
+We should remove them.

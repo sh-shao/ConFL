@@ -1,0 +1,6 @@
+IngestSegmentFirehoseFactory race between tasks
+IngestSegmentFirehoseFactory uses a fixed task id `"reindex"` when creating the toolbox factory that it uses to get segments. This creates a race condition where two tasks could actually download the same segment at the same time into the same directory, and one will get clobbered and fail.
+
+One situation where this can happen easily is if you're reindexing a datasource into _two_ datasources (maybe reducing to two different levels of grain). The tasks will proceed simultaneously, since there's no cross locking, but they'll be downloading the same segments for the input datasource.
+
+One fix is having it actually use the real task id (which would need to get plumbed in). This has the advantage of putting the task files all together, and using the existing mechanisms for cleaning up task work directories.

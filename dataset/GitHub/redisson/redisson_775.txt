@@ -1,0 +1,16 @@
+Indefinite lock lost during master failover
+I've found my indefinitely held locks will sometimes disappear after a master/slave failover.  The block [here](https://github.com/redisson/redisson/blob/6f7f43716aa78c99ec4572685f55accc0f6816f7/redisson/src/main/java/org/redisson/RedissonLock.java#L219) will not reschedule a renewal if the attempt of the update fails.  
+
+The update can fail during a failover, in which case the lock is gone for good.
+
+The exception that gets thrown when the update fails:
+
+```
+org.redisson.RedissonLock: Can't update lock {chaos:pixel-gun}:/2rQnzwnEeOcovlp1fBZCw:key expiration
+org.redisson.client.RedisTimeoutException: Redis server response timeout (3000 ms) occured for command: (EVAL) with params: [if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then redis.call('pexpire', KEYS[1], ARGV[1]); retu..., 1, {chaos:pixel-gun}:/2rQnzwnEeOcovlp1fBZCw:key, 30000, 3edaecd7-8b5a-4c47-bdc6-fff775044369:82] channel: [id: 0x48ee8af7, 0.0.0.0/0.0.0.0:56264]
+	at org.redisson.command.CommandAsyncService$10.run(CommandAsyncService.java:647) ~[redisson-3.2.3.jar:na]
+	at io.netty.util.HashedWheelTimer$HashedWheelTimeout.expire(HashedWheelTimer.java:581) [netty-all-4.0.23.Final.jar:4.0.23.Final]
+	at io.netty.util.HashedWheelTimer$HashedWheelBucket.expireTimeouts(HashedWheelTimer.java:656) [netty-all-4.0.23.Final.jar:4.0.23.Final]
+	at io.netty.util.HashedWheelTimer$Worker.run(HashedWheelTimer.java:367) [netty-all-4.0.23.Final.jar:4.0.23.Final]
+	at java.lang.Thread.run(Thread.java:745) [na:1.8.0_45]
+```

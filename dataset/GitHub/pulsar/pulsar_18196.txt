@@ -1,0 +1,45 @@
+[Bug] locallyAcquiredLocks leak in OwnershipCache
+### Search before asking
+
+- [X] I searched in the [issues](https://github.com/apache/pulsar/issues) and found nothing similar.
+
+
+### Version
+
+master
+
+### Minimal reproduce step
+
+review the code
+
+<img width="795" alt="image" src="https://user-images.githubusercontent.com/2684384/197915334-bd273680-b3da-43f4-9405-6318ccfb5857.png">
+
+34M 
+
+### What did you expect to see?
+
+```
+    public CompletableFuture<Void> removeOwnership(NamespaceBundle bundle) {
+        ResourceLock<NamespaceEphemeralData> lock = locallyAcquiredLocks.get(bundle);
+        if (lock == null) {
+            // We don't own the specified bundle anymore
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return lock.release();
+    }
+```
+
+should be locallyAcquiredLocks.remove(bundle)
+
+### What did you see instead?
+
+leak
+
+### Anything else?
+
+_No response_
+
+### Are you willing to submit a PR?
+
+- [X] I'm willing to submit a PR!

@@ -1,0 +1,28 @@
+CommandAsyncService blocks indefinitely [without OutOfMemoryError] 
+Similarly to #889
+ at sun.misc.Unsafe.park(Native Method)
+        -  waiting on java.util.concurrent.CountDownLatch$Sync@f2899ce
+        at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly(AbstractQueuedSynchronizer.java:997)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(AbstractQueuedSynchronizer.java:1304)
+        at java.util.concurrent.CountDownLatch.await(CountDownLatch.java:231)
+        at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:152)
+        at org.redisson.RedissonObject.get(RedissonObject.java:75)
+        at org.redisson.RedissonMap.get(RedissonMap.java:251)
+
+
+### Expected behavior
+throw exception
+### Actual behavior
+Thread indefinitely park
+### Steps to reproduce or test case
+1. Using RMapCache and configure maploader to DB(oracle).
+2. Shutdown DB,
+3.RMapCache get operation will be blocked.
+### Redis version
+any
+### Redisson version
+3.6.0
+### Redisson configuration
+standalone

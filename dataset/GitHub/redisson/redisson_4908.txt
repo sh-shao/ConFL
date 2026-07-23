@@ -1,0 +1,237 @@
+READONLY You can't write against a read only replica.. 
+I am testing against 3 servers redis+sentinel, connecting redisson from pc, it connect to all servers, then iam start drop-script, it drop server by cycle for 5minutes. 
+After some time i catch error "READONLY You can't write against a read only replica.." if i try bucket->set operation (write) in it moment. 
+I am stop drop-script, all servers is going up, but error steel present. If again change master, error goes away.
+
+Ip address of write operation server is other then real master from redis+sentinel. I look into sniffer for redisson sentinels requests "GET-MASTER-ADDR-BY-NAME", 
+reply from sentinel has been is right ip address of master server.
+
+Than, i am do some debug, and look that SentinelConnectionManager.currentMaster == "real master ip address", but SentinelConnectionManager.masterSlaveEntry.writeConnectionPool.entires 
+has ClientConnectionsEntry with other "wrong" ip address.
+
+It happens because we have race condition in threads, i think problem in function SentinelConnectionManager.checkMasterChange, code that compare and changing master wrapped into
+".whenComplete((newMaster, e) ->" not awaited in  SentinelConnectionManager.updateState { ... CompletableFuture.allOf ...} and if we connection has timeout SentinelConnectionManager.checkMasterChange { ...whenComplete... }
+has race condition state can set right currentMaster and wrong setupMasterEntry.
+
+SentinelConnectionManager.updateState:
+```
+...
+        CompletableFuture<Void> future = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        future.whenComplete((r, e) -> {
+            if (e != null) {
+                log.error("Can't execute SENTINEL commands on {}", connection.getRedisClient().getAddr(), e);
+            }
+...
+```
+
+SentinelConnectionManager.checkMasterChange:
+```
+    private CompletionStage<RedisURI> checkMasterChange(SentinelServersConfig cfg, RedisConnection connection) {
+        RFuture<RedisURI> masterFuture = connection.async(StringCodec.INSTANCE, masterHostCommand, cfg.getMasterName());
+        return masterFuture.thenCompose(u -> serviceManager.resolveIP(scheme, u))
+                .whenComplete((newMaster, e) -> {	// <-- Can return Future of changingMaster.
+            if (e != null) {
+                return;
+            }
+            RedisURI current = currentMaster.get();
+...
+```
+
+I am add some self debug messages in redisson and recompile and reproduce error, that look the setupMasterEntry not awaiting by updateState.
+```
+./app.log:6691:2023-03-06 02:14:59,036 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-9] MYMY scheduleChangeCheck run683
+./app.log:6692:2023-03-06 02:14:59,036 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-9] MYMY checkState reqId = 683
+./app.log:6693:2023-03-06 02:14:59,036 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-9] MYMY updateState reqId = 683
+./app.log:6694:2023-03-06 02:14:59,036 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-9] MYMY checkMasterChange reqId = 683
+./app.log:6696:2023-03-06 02:15:02,131 INFO org.redisson.connection.SentinelConnectionManager [redisson-timer-4-1] MYMY updateState reqId = 683 future.whenComplete
+./app.log:6716:2023-03-06 02:15:02,132 INFO org.redisson.connection.SentinelConnectionManager [redisson-timer-4-1] MYMY scheduleChangeCheck 683
+./app.log:6717:2023-03-06 02:15:03,133 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-10] MYMY scheduleChangeCheck run684
+./app.log:6718:2023-03-06 02:15:03,133 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-10] MYMY checkState reqId = 684
+./app.log:6719:2023-03-06 02:15:03,133 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-10] MYMY updateState reqId = 684
+./app.log:6720:2023-03-06 02:15:03,133 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-10] MYMY checkMasterChange reqId = 684
+./app.log:6721:2023-03-06 02:15:03,134 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY reqId = 684 checkMasterChange compareAndSet current = redis://172.18.20.168:6379 and newMaster = redis://172.18.20.166:6379
+./app.log:6756:2023-03-06 02:15:03,137 INFO org.redisson.connection.SingleEntry [redisson-netty-2-1] MYMY 172.18.20.166/172.18.20.166:6379 setupMasterEntry futures wait.
+./app.log:6758:2023-03-06 02:15:03,142 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY updateState reqId = 684 future.whenComplete
+./app.log:6759:2023-03-06 02:15:03,142 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY scheduleChangeCheck 684
+./app.log:6765:2023-03-06 02:15:03,145 INFO org.redisson.connection.SingleEntry [redisson-netty-2-16] MYMY 172.18.20.166/172.18.20.166:6379 setupMasterEntry thenApply - complete.
+./app.log:6766:2023-03-06 02:15:03,147 INFO org.redisson.connection.SingleEntry [redisson-netty-2-16] MYMY 172.18.20.166/172.18.20.166:6379 changeMaster -> CHANGED to 172.18.20.166/172.18.20.166:6379
+./app.log:6772:2023-03-06 02:15:04,144 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-14] MYMY scheduleChangeCheck run685
+./app.log:6773:2023-03-06 02:15:04,144 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-14] MYMY checkState reqId = 685
+./app.log:6774:2023-03-06 02:15:04,144 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-14] MYMY updateState reqId = 685
+./app.log:6775:2023-03-06 02:15:04,144 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-14] MYMY checkMasterChange reqId = 685
+./app.log:6776:2023-03-06 02:15:04,146 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-24] MYMY updateState reqId = 685 future.whenComplete
+./app.log:6777:2023-03-06 02:15:04,146 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-24] MYMY scheduleChangeCheck 685
+./app.log:6778:2023-03-06 02:15:05,147 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-30] MYMY scheduleChangeCheck run686
+```
+
+And race condition of callback:
+```
+./app.log:12151:2023-03-06 02:24:58,094 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY scheduleChangeCheck run1265
+./app.log:12152:2023-03-06 02:24:58,094 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY checkState reqId = 1265
+./app.log:12168:2023-03-06 02:24:58,095 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY updateState reqId = 1265
+./app.log:12169:2023-03-06 02:24:58,095 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY checkMasterChange reqId = 1265
+./app.log:12170:2023-03-06 02:24:58,096 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY updateState reqId = 1265 future.whenComplete
+./app.log:12171:2023-03-06 02:24:58,096 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY scheduleChangeCheck 1265
+./app.log:12230:2023-03-06 02:24:59,097 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-5] MYMY scheduleChangeCheck run1266
+./app.log:12231:2023-03-06 02:24:59,098 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-5] MYMY checkState reqId = 1266
+./app.log:12247:2023-03-06 02:24:59,098 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-5] MYMY updateState reqId = 1266
+./app.log:12248:2023-03-06 02:24:59,098 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-5] MYMY checkMasterChange reqId = 1266
+./app.log:12249:2023-03-06 02:24:59,099 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY updateState reqId = 1266 future.whenComplete
+./app.log:12250:2023-03-06 02:24:59,099 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY scheduleChangeCheck 1266
+./app.log:12309:2023-03-06 02:25:00,071 INFO org.redisson.connection.SingleEntry [redisson-netty-2-8] MYMY 172.18.20.167/172.18.20.167:6379 setupMasterEntry -> exception = org.redisson.client.RedisConnectionException: Unable to connect to Redis server: 172.18.20.167/172.18.20.167:6379
+./app.log:12310:2023-03-06 02:25:00,071 INFO org.redisson.connection.SingleEntry [redisson-netty-2-8] MYMY 172.18.20.167/172.18.20.167:6379 changeMaster -> exception = org.redisson.client.RedisConnectionException: Unable to connect to Redis server: 172.18.20.167/172.18.20.167:6379
+./app.log:12353:2023-03-06 02:25:00,077 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-8] MYMY reqId = 1257 checkMasterChange -> exception = org.redisson.client.RedisConnectionException: Unable to connect to Redis server: 172.18.20.167/172.18.20.167:6379
+./app.log:12354:2023-03-06 02:25:00,101 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-7] MYMY scheduleChangeCheck run1267
+./app.log:12355:2023-03-06 02:25:00,101 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-7] MYMY checkState reqId = 1267
+./app.log:12371:2023-03-06 02:25:00,101 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-7] MYMY updateState reqId = 1267
+./app.log:12372:2023-03-06 02:25:00,101 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-7] MYMY checkMasterChange reqId = 1267
+./app.log:12373:2023-03-06 02:25:00,102 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY reqId = 1267 checkMasterChange compareAndSet current = redis://172.18.20.166:6379 and newMaster = redis://172.18.20.167:6379
+./app.log:12408:2023-03-06 02:25:00,103 INFO org.redisson.connection.SingleEntry [redisson-netty-2-1] MYMY 172.18.20.167/172.18.20.167:6379 setupMasterEntry futures wait.
+./app.log:12411:2023-03-06 02:25:00,104 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY updateState reqId = 1267 future.whenComplete
+./app.log:12412:2023-03-06 02:25:00,104 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY scheduleChangeCheck 1267
+./app.log:12503:2023-03-06 02:25:01,105 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-16] MYMY scheduleChangeCheck run1268
+./app.log:12504:2023-03-06 02:25:01,105 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-16] MYMY checkState reqId = 1268
+./app.log:12520:2023-03-06 02:25:01,105 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-16] MYMY updateState reqId = 1268
+./app.log:12521:2023-03-06 02:25:01,105 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-16] MYMY checkMasterChange reqId = 1268
+./app.log:12522:2023-03-06 02:25:01,107 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY updateState reqId = 1268 future.whenComplete
+./app.log:12523:2023-03-06 02:25:01,107 INFO org.redisson.connection.SentinelConnectionManager [redisson-netty-2-1] MYMY scheduleChangeCheck 1268
+```
+
+One stack trace of error.
+```
+2023-03-06 02:24:52,037 INFO com.test.appclean.Application [main] Exception:READONLY You can't write against a read only replica.. channel: [id: 0xdc0ee8bd, L:/172.18.20.166:58492 - R:172.18.20.166/172.18.20.166:6379] command: (SET), promise: java.util.concurrent.CompletableFuture@54d0fcb4[Not completed, 1 dependents], params: [testvar, PooledUnsafeDirectByteBuf(ridx: 0, widx: 8, cap: 256)]org.redisson.client.RedisException: READONLY You can't write against a read only replica.. channel: [id: 0xdc0ee8bd, L:/172.18.20.166:58492 - R:172.18.20.166/172.18.20.166:6379] command: (SET), promise: java.util.concurrent.CompletableFuture@54d0fcb4[Not completed, 1 dependents], params: [testvar, PooledUnsafeDirectByteBuf(ridx: 0, widx: 8, cap: 256)]
+  at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:380)
+  at org.redisson.client.handler.CommandDecoder.decodeCommand(CommandDecoder.java:205)
+  at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:144)
+  at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:120)
+  at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:529)
+  at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:366)
+  at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:290)
+  at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:444)
+  at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:420)
+  at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:412)
+  at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1410)
+  at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:440)
+  at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:420)
+  at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:919)
+  at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:166)
+  at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:788)
+  at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:724)
+  at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:650)
+  at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:562)
+  at io.netty.util.concurrent.SingleThreadEventExecutor$4.run(SingleThreadEventExecutor.java:997)
+  at io.netty.util.internal.ThreadExecutorMap$2.run(ThreadExecutorMap.java:74)
+  at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+  at java.lang.Thread.run(Thread.java:748)
+
+```
+
+**Redis version**
+6.2.6
+**Redisson version**
+3.19.3
+
+**Steps to reproduce or test case**
+
+```
+package com.test.appclean;
+
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.redisson.config.ReadMode;
+import org.redisson.config.SentinelServersConfig;
+import org.redisson.config.SubscriptionMode;
+import org.redisson.connection.balancer.LoadBalancer;
+import org.redisson.connection.balancer.RoundRobinLoadBalancer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.Arrays;
+import java.util.List;
+
+
+public class Application {
+    private static Logger logger = LoggerFactory.getLogger(Application.class);
+
+    /**
+     * Entry point.
+     *
+     * @param args agrs
+     */
+    public static void main(final String[] args) throws InterruptedException {
+        logger.info("Hello world");
+
+        RedissonClient cache = createRedissonCache();
+        //RedissonClient database = createRedissonDatabase();
+        int i = 0;
+        while (true) {
+            try {
+                logger.info("\nPPPPPPPPPPP set testvar to val=" +i+"\n");
+                cache.getBucket("testvar").set("val=" + i);
+            } catch (Exception e) {
+                StringWriter sw = new StringWriter();
+                PrintWriter pw = new PrintWriter(sw);
+                e.printStackTrace(pw);
+                logger.info("Exception:"+e.getMessage()+sw.toString());
+            }
+            i++;
+            Thread.sleep( 1000);
+        }
+        //Thread.sleep(7 * 24 * 60 * 60 * 1000);
+    }
+
+    public static RedissonClient createRedissonCache() {
+
+        String redisDbName = "cacheMaster";
+        String redisAddresses = "redis://172.18.20.166:26379,redis://172.18.20.167:26379,redis://172.18.20.168:26379";
+
+        List<String> hosts = Arrays.asList(redisAddresses.split(","));
+
+        Config config = new Config();
+
+        SentinelServersConfig connect = config.useSentinelServers().setMasterName(redisDbName);
+        if (hosts.size() < 2) connect.setCheckSentinelsList(false);
+        LoadBalancer loadBalancer = new RoundRobinLoadBalancer();
+
+        connect.setLoadBalancer(loadBalancer);
+        connect.setSentinelAddresses(hosts);
+        connect.setMasterConnectionMinimumIdleSize(1);
+        connect.setSlaveConnectionMinimumIdleSize(1);
+
+        connect.setReadMode(ReadMode.MASTER);
+        connect.setSubscriptionMode(SubscriptionMode.MASTER);
+
+        RedissonClient client = Redisson.create(config);
+        return client;
+    }
+
+}
+```
+
+dropscript.sh:
+```
+#!/bin/sh
+
+trap ctrl_c INT
+function ctrl_c() {
+    echo "Ctrl + C happened"
+    exit
+}
+
+HOSTS='172.18.20.166 172.18.20.167 172.18.20.168'
+
+while [ 1 = 1 ]; do
+  for v in $HOSTS; do
+    echo "$(date +"%T") Go down host $v"
+    ssh root@$v 'ip link set eth0 down && sleep 5m && ip link set eth0 up'
+    echo "$(date +"%T") Go up host $v "
+    #sleep 1m
+   # exit
+  done
+  echo "Wait for next cycle 10s"
+  sleep 10s
+done
+```

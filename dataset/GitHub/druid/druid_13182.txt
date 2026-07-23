@@ -1,0 +1,72 @@
+The Broker's Java threads hang on certain SQL queries
+The Broker Java Threads responsible for running queries will permanently hang on certain SQL queries.
+
+### Affected Version
+
+Druid 0.22.1
+
+### Description
+
+When certain SQL queries are made to Druid the Broker's Java Threads can hang. This causes the thread to permanently take up CPU and cause high Garbage Collection until the Broker is restarted.
+
+A detailed description of the Java Thread hang issue can be found in this Druid Forum thread.
+https://www.druidforum.org/t/observed-qtp-threads-hanging-on-broker-with-druid-0-22-1/7206
+
+The Brokers are running on an r5.4xlarge footprint with 16 CPU, 128GB of Memory, and 80G Heap.
+
+The Broker runtime.properties config:
+```
+druid.service=druid/broker
+druid.plaintextPort=8082
+druid.tlsPort=8282
+
+druid.server.http.numThreads=40
+druid.server.http.gracefulShutdownTimeout=PT1M
+druid.server.http.defaultQueryTimeout=60000
+
+druid.broker.http.numConnections=30
+druid.broker.http.maxQueuedBytes=10000000
+
+druid.processing.buffer.sizeBytes=500000000
+druid.processing.numMergeBuffers=16
+druid.processing.numThreads=15
+
+druid.query.scheduler.prioritization.strategy=threshold
+druid.query.scheduler.prioritization.durationThreshold=PT24H
+druid.query.scheduler.prioritization.adjustment=-1
+druid.sql.planner.requireTimeCondition=false
+druid.sql.planner.metadataSegmentCacheEnable=true
+druid.sql.planner.metadataSegmentPollPeriod=60000
+
+druid.broker.cache.useCache=false
+druid.broker.cache.populateCache=false
+
+druid.monitoring.monitors=["org.apache.druid.java.util.metrics.SysMonitor","org.apache.druid.java.util.metrics.JvmMonitor","org.apache.druid.java.util.metrics.JvmCpuMonitor","org.apache.druid.java.util.metrics.JvmThreadsMonitor","org.apache.druid.client.cache.CacheMonitor","org.apache.druid.server.metrics.QueryCountStatsMonitor"]
+```
+
+The Broker runtime arguments:
+```
+java -Xms12G -Xmx12G -Duser.timezone=UTC -Dfile.encoding=UTF-8 -Djava.util.logging.manager=org.apache.logging.log4j.jul.LogManager -Dorg.jboss.logging.provider=slf4j -Dnet.spy.log.LoggerImpl=net.spy.memcached.compat.log.SLF4JLogger -Dlog4j.shutdownCallbackRegistry=org.apache.druid.common.config.Log4jShutdown -Dlog4j.shutdownHookEnabled=true -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintGCTimeStamps -XX:+PrintGCApplicationStoppedTime -XX:+PrintGCApplicationConcurrentTime -Xloggc:/var/log/druid.gc.log -XX:+UseGCLogFileRotation -XX:NumberOfGCLogFiles=50 -XX:GCLogFileSize=10m -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -XX:+UseG1GC -XX:+UseBiasedLocking -Xms80G -Xmx80G -XX:MaxDirectMemorySize=40G -Dcom.sun.management.jmxremote -Dcom.sun.magement.jmxremote.authenticate=true -Dcom.sun.management.jmxremote.password.file=/opt/druid/conf/druid/_common/jmxremote.password -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.port=1099 -Dcom.sun.management.jmxremote.rmi.port=1099 -Djava.rmi.server.hostname=10.10.203.144 -cp /opt/druid/conf/druid/_common:/opt/druid/conf/druid/broker:/opt/druid/lib/* org.apache.druid.cli.Main server broker
+```
+
+We have recently been able to determine the type of SQL queries which are causing this problem, and can reproduce the issue on any of our clusters.
+
+The query must:
+- Use time bucketing.
+- Filter on a numeric field with an empty string.
+
+Example query:
+```sql
+SELECT AVG("value"), TIME_FLOOR("__time", 'PT1m')
+FROM "testing:selfmonitor.metrics"
+WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '10' MINUTE
+AND "value" = ''
+GROUP BY TIME_FLOOR("__time", 'PT1m')
+```
+
+The query does not cause a thread hang if:
+- Time bucketing is removed.
+- The WHERE clause is changed to filter on a string field. (example: "metric" = '')
+- The empty string contains some value. (example: "value" = '1')
+
+This has been an issue for us because of queries coming from Grafana. If a dashboard's variable does not get set properly then it has no value, and the SQL queries sent to Druid contain these empty string comparisons. If the comparison is done on a numeric field then the Broker's CPU will increase permanently until we reboot it.

@@ -1,0 +1,71 @@
+Redisson hang on RBatch.execute()
+Hi, we are using redisson client for our multi-threaded application.
+
+We use RBatch to batch two commands as below:
+
+           RBatch batch = client.createBatch();
+            batch.timeout(1000, TimeUnit.MILLISECONDS);
+            RMapAsync<String, byte[]> map = batch.getMap(key, RedissonByteArrayMapValueCodec.INSTANCE);
+            map.putAllAsync(hashData);
+            map.expireAsync(ttlSeconds, TimeUnit.SECONDS);
+            batch.execute(); 
+         
+During the test, we noticed the hang several time.
+
+We first show this error first before the hang:
+
+`VYM-748304795.us-west-2.elb.amazonaws.com/m3u8/lego262346.m3u8}]', anchor='PT59.832631279S', driftMillis='0'}
+11 Sep 2017 18:09:43,195 [WARN]  (redisson-netty-12-6) io.netty.util.concurrent.DefaultPromise: An exception was thrown by org.redisson.command.CommandBatchService$5.operationComplete()
+ org.redisson.client.RedisNodeNotFoundException: Node: /127.0.0.1:30003 for slot: 10928 hasn't been discovered yet
+	at org.redisson.connection.MasterSlaveConnectionManager.getEntry(MasterSlaveConnectionManager.java:684) ~[Redisson-3.x.jar:?]
+	at org.redisson.connection.MasterSlaveConnectionManager.connectionWriteOp(MasterSlaveConnectionManager.java:674) ~[Redisson-3.x.jar:?]
+	at org.redisson.command.CommandBatchService.execute(CommandBatchService.java:258) ~[Redisson-3.x.jar:?]
+	at org.redisson.command.CommandBatchService.access$100(CommandBatchService.java:59) ~[Redisson-3.x.jar:?]
+	at org.redisson.command.CommandBatchService$5.operationComplete(CommandBatchService.java:331) ~[Redisson-3.x.jar:?]
+	at io.netty.util.concurrent.DefaultPromise.notifyListener0(DefaultPromise.java:507) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners0(DefaultPromise.java:500) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.util.concurrent.DefaultPromise.notifyListenersNow(DefaultPromise.java:479) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.util.concurrent.DefaultPromise.notifyListeners(DefaultPromise.java:420) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.util.concurrent.DefaultPromise.tryFailure(DefaultPromise.java:122) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at org.redisson.misc.RedissonPromise.tryFailure(RedissonPromise.java:98) ~[Redisson-3.x.jar:?]
+	at org.redisson.client.handler.CommandDecoder.decodeCommandBatch(CommandDecoder.java:207) ~[Redisson-3.x.jar:?]
+	at org.redisson.client.handler.CommandDecoder.decode(CommandDecoder.java:135) ~[Redisson-3.x.jar:?]
+	at io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:489) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.handler.codec.ReplayingDecoder.callDecode(ReplayingDecoder.java:367) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.handler.codec.ByteToMessageDecoder.channelRead(ByteToMessageDecoder.java:265) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:362) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:348) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:340) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.channel.ChannelInboundHandlerAdapter.channelRead(ChannelInboundHandlerAdapter.java:86) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:362) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:348) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.AbstractChannelHandlerContext.fireChannelRead(AbstractChannelHandlerContext.java:340) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.channel.DefaultChannelPipeline$HeadContext.channelRead(DefaultChannelPipeline.java:1334) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:362) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.channel.AbstractChannelHandlerContext.invokeChannelRead(AbstractChannelHandlerContext.java:348) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.channel.DefaultChannelPipeline.fireChannelRead(DefaultChannelPipeline.java:926) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.channel.nio.AbstractNioByteChannel$NioByteUnsafe.read(AbstractNioByteChannel.java:134) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.nio.NioEventLoop.processSelectedKey(NioEventLoop.java:644) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeysOptimized(NioEventLoop.java:579) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.nio.NioEventLoop.processSelectedKeys(NioEventLoop.java:496) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.channel.nio.NioEventLoop.run(NioEventLoop.java:458) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+ 	at io.netty.util.concurrent.SingleThreadEventExecutor$5.run(SingleThreadEventExecutor.java:858) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at io.netty.util.concurrent.DefaultThreadFactory$DefaultRunnableDecorator.run(DefaultThreadFactory.java:138) ~[netty-all-4.1.jar:4.1.13.Final-SNAPSHOT]
+	at java.lang.Thread.run(Thread.java:748) [?:1.8.0_141]`
+
+Then our thread calling the batch hung. There is the stacktrack:
+
+`   java.lang.Thread.State: WAITING (parking)
+        at sun.misc.Unsafe.park(Native Method)
+        - parking to wait for  <0x00000007bafd7438> (a java.util.concurrent.CountDownLatch$Sync)
+        at java.util.concurrent.locks.LockSupport.park(LockSupport.java:175)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.parkAndCheckInterrupt(AbstractQueuedSynchronizer.java:836)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.doAcquireSharedInterruptibly(AbstractQueuedSynchronizer.java:997)
+        at java.util.concurrent.locks.AbstractQueuedSynchronizer.acquireSharedInterruptibly(AbstractQueuedSynchronizer.java:1304)
+        at java.util.concurrent.CountDownLatch.await(CountDownLatch.java:231)
+        at org.redisson.command.CommandAsyncService.get(CommandAsyncService.java:148)
+        at org.redisson.command.CommandBatchService.execute(CommandBatchService.java:134)
+        at org.redisson.RedissonBatch.execute(RedissonBatch.java:253)`
+
+
+I tried to set the lower lockWatchdogTimeout and set the batch timeout but this did not help.

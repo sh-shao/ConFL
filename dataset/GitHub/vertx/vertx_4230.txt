@@ -1,0 +1,14 @@
+ShutdownHook
+The vertx internal ShutdownHook calls vertx.close();
+
+The problem here is, that it is not waiting on finish, because the internal returned Future is not blocked.
+
+So i thought to make my own ShutdownHook, but then it is race between my ShutDownHook and the Vertx internal.
+
+If i call vertx.close() after the internal hook called it already, then I get a new Future.
+
+
+So maybe here would be two improvments good:
+
+- The option to configure Vertx to gracefully shutdown, so that its internal ShutdownHook waits untill the Future completes (`.toCompletionStage().toCompletableFuture().join()`)
+- After vertx.close() is called once, an second call recieve the same, a cached Future

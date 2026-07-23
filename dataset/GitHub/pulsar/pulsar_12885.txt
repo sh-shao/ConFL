@@ -1,0 +1,68 @@
+[Bug] Unordered consuming case in  Key_Shared subscription
+**Describe the bug**
+It's a previous flaky test in `org.apache.pulsar.client.api.KeySharedSubscriptionTest#testRemoveFirstConsumer`
+See #11426
+
+There is a race condition in `PersistentDispatcherMultipleConsumers` when previous client closed with unack messaages.
+
+**Detailed Explanation:**
+Here is the core steps of this case.
+1. produce 10 messages: m0~m9
+2. wait unitl c1 got all the 10 message.
+3. create c2 with same setting as c1.
+4. produce 10 messages: m10~m19
+5. c2 will not be able to receive any messages until c1 is done processing whatever he got prefetched.
+6. c1.close();
+7. Call c2.receive() now, **It should receive m0. But there is some chance it will return m10.**
+
+The race condition happens after step6.
+Just before step6, there is a retry loop going on for this consumer.
+```
+Thread 1:
+1.1 PersistentDispatcherMultipleConsumers#readMoreEntries //synchronized
+1.2     calculateToRead() return (10,xxx)
+1.3     getMessagesToReplayNow() return m10-m14
+1.4     havePendingReplayRead = true
+1.5     asyncReplayEntriesInOrder(m10-m14) --> cursor.asyncReplayEntries() --> will callback readEntriesComplete async.
+
+Thread 2:
+2.1 PersistentDispatcherMultipleConsumers#readEntriesComplete //synchronized
+2.2     havePendingReplayRead = false;
+2.3     PersistentStickyKeyDispatcherMultipleConsumers#sendMessagesToConsumers(m10-m14)
+2.4         //DEBUG Log: select consumer c1 with messages num 0, read type is Replay
+            Can not send to c1 because it runs out of permits.
+2.5         //DEBUG Log: select consumer c2 with messages num 0, read type is Replay
+            Can not send to c2 because it should wait c1 to complete unacked messages.
+2.6         Finally, no consumer to send message. So it schedule call readMoreEntries() in 100ms.
+```
+
+After we close c1, PersistentDispatcherMultipleConsumers#removeConsumer will be called like this.
+```
+Thread3
+3.1PersistentDispatcherMultipleConsumers#removeConsumer
+3.2        consumer.getPendingAcks().forEach : addMessageToReplay m0-m9
+3.3        calls readMoreEntries.
+```
+
+If Thread3 happens after Thread2, everything is ok, and this is most of the real cases. As time between Thread1 and Thread2 is quite small.
+But if it does happens in the order of Thread1 --> Thread3 --> Thread2. The disorder occurs.
+In the `readMoreEntries` of 3.3 ,  calculateToRead return -1,-1 because havePendingReplayRead is true in 1.2 of Thread1. So the `readMoreEntries` will just returns without further actions.
+Then in Thread2, previous reading ended, and we got m10-m14 to dispatch. now we can select consumer c2 because we have no more c1 for waiting.  So the client c2 got m10 instead of m0.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. It easier to reproduce this in local environment by changing the 100ms to 1ms here.
+https://github.com/apache/pulsar/blob/552360455382e33901b6d74c26f883ffb6907ba9/pulsar-broker/src/main/java/org/apache/pulsar/broker/service/persistent/PersistentStickyKeyDispatcherMultipleConsumers.java#L294
+2.  Run Test on` org.apache.pulsar.client.api.KeySharedSubscriptionTest#testRemoveFirstConsumer`. It will hit the race condition in a few retries.
+
+**Expected behavior**
+As the case designed in `testRemoveFirstConsumer`. The consuming order should be right.
+
+**Screenshots**
+Nop
+
+**Desktop (please complete the following information):**
+ - OS: macOS
+
+**Additional context**
+NO

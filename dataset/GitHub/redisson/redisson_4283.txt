@@ -1,0 +1,56 @@
+Using map merge with a MapLoader, when a key does not exist in Redis yet, makes the thread wait forever
+**Expected behavior**
+
+Using the merge method on a map (RLocalCachedMap in my case) when the map is empty (the key in Redis does not exist yet) and using a custom MapLoader should work.
+
+**Actual behavior**
+
+The merge operation on a map hangs forever if there are no values yet (the local map is empty and the key in Redis does not exist yet) and a custom MapLoader is used.
+
+**Steps to reproduce or test case**
+
+```java
+class RedissonUnitTest {
+
+    @Test
+    void shouldMergeValuesWithMapLoader() {
+        RedissonClient redissonClient = Redisson.create();
+
+        LocalCachedMapOptions options = LocalCachedMapOptions.defaults();
+        options.loader(new MapLoader() {
+            @Override
+            public Object load(Object o) {
+                return null; // or can return some value, e.g. 1
+            }
+
+            @Override
+            public Iterable loadAllKeys() {
+                return null;
+            }
+        });
+
+        RLocalCachedMap<String, Integer> localCachedMap = redissonClient.getLocalCachedMap("test", options);
+
+        localCachedMap.merge("counter", 1, (x, y) -> x + y);
+
+        Integer counter = localCachedMap.get("counter");
+
+        Assertions.assertNotNull(counter);
+        Assertions.assertTrue(counter > 0);
+    }
+}
+```
+
+**Redis version**
+
+5.0.12
+
+**Redisson version**
+
+3.17.1
+
+**Redisson configuration**
+
+``` java
+RedissonClient redissonClient = Redisson.create();
+```

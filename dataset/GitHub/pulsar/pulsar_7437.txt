@@ -1,0 +1,16 @@
+Pulsar Admin Java Client leaves hanging thread after close called
+**Describe the bug**
+After closing a Java pulsar admin instance, a delayer thread is left hanging in the background in a TIMED_WAITING state that can prevent the parent program from ending.
+
+**To Reproduce**
+Steps to reproduce the behavior:
+1. Create a pulsar admin instance.
+2. Add a new topic using the pulsar admin.
+3. Close the pulsar admin.
+4. Do a java thread dump to see the hanging delayer thread.
+
+**Expected behavior**
+Calling close should free and end all threads created by the PulsarAdmin. This includes all AsyncHttp related threads.
+
+**Desktop (please complete the following information):**
+- Linux

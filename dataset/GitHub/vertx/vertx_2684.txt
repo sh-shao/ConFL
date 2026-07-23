@@ -1,0 +1,38 @@
+executeBlocking callback run on the wrong thread for asynchronous future resolution
+Currently the `executeBlocking(Handler<Future<T>>, Handler<AsyncResult<T>>)` might execute the callback on the wrong thread when the `runOnContext(...)` execution loses the race against the thread that completes the future. This never happens when the worker thread completes the future, but it can happen when the worker thread hands off the future to another thread that completes it.
+
+This happen in the Mongo client and fails with a stack-trace like:
+
+```
+	at io.vertx.ext.mongo.impl.MongoIterableStream.lambda$doRead$5(MongoIterableStream.java:120)
+	at io.vertx.core.impl.FutureImpl.tryComplete(FutureImpl.java:125)
+	at io.vertx.core.impl.FutureImpl.complete(FutureImpl.java:86)
+	at io.vertx.ext.mongo.impl.MongoIterableStream.lambda$null$3(MongoIterableStream.java:112)
+	at com.mongodb.internal.async.ErrorHandlingResultCallback.onResult(ErrorHandlingResultCallback.java:49)
+	at com.mongodb.operation.AsyncQueryBatchCursor.handleGetMoreQueryResult(AsyncQueryBatchCursor.java:271)
+	at com.mongodb.operation.AsyncQueryBatchCursor.access$300(AsyncQueryBatchCursor.java:55)
+	at com.mongodb.operation.AsyncQueryBatchCursor$CommandResultSingleResultCallback.onResult(AsyncQueryBatchCursor.java:301)
+	at com.mongodb.operation.AsyncQueryBatchCursor$CommandResultSingleResultCallback.onResult(AsyncQueryBatchCursor.java:276)
+	at com.mongodb.internal.async.ErrorHandlingResultCallback.onResult(ErrorHandlingResultCallback.java:49)
+	at com.mongodb.connection.DefaultServer$DefaultServerProtocolExecutor$2.onResult(DefaultServer.java:207)
+	at com.mongodb.internal.async.ErrorHandlingResultCallback.onResult(ErrorHandlingResultCallback.java:49)
+	at com.mongodb.connection.CommandProtocolImpl$1.onResult(CommandProtocolImpl.java:102)
+	at com.mongodb.connection.DefaultConnectionPool$PooledConnection$1.onResult(DefaultConnectionPool.java:458)
+	at com.mongodb.connection.UsageTrackingInternalConnection$2.onResult(UsageTrackingInternalConnection.java:110)
+	at com.mongodb.internal.async.ErrorHandlingResultCallback.onResult(ErrorHandlingResultCallback.java:49)
+	at com.mongodb.connection.InternalStreamConnection$2$1.onResult(InternalStreamConnection.java:381)
+	at com.mongodb.connection.InternalStreamConnection$2$1.onResult(InternalStreamConnection.java:359)
+	at com.mongodb.connection.InternalStreamConnection$MessageHeaderCallback$MessageCallback.onResult(InternalStreamConnection.java:651)
+	at com.mongodb.connection.InternalStreamConnection$MessageHeaderCallback$MessageCallback.onResult(InternalStreamConnection.java:618)
+	at com.mongodb.connection.InternalStreamConnection$5.completed(InternalStreamConnection.java:487)
+	at com.mongodb.connection.InternalStreamConnection$5.completed(InternalStreamConnection.java:484)
+	at com.mongodb.connection.AsynchronousSocketChannelStream$BasicCompletionHandler.completed(AsynchronousSocketChannelStream.java:233)
+	at com.mongodb.connection.AsynchronousSocketChannelStream$BasicCompletionHandler.completed(AsynchronousSocketChannelStream.java:216)
+	at sun.nio.ch.Invoker.invokeUnchecked(Invoker.java:126)
+	at sun.nio.ch.Invoker.invokeDirect(Invoker.java:157)
+	at sun.nio.ch.UnixAsynchronousSocketChannelImpl.implRead(UnixAsynchronousSocketChannelImpl.java:553)
+	at sun.nio.ch.AsynchronousSocketChannelImpl.read(AsynchronousSocketChannelImpl.java:276)
+	at sun.nio.ch.AsynchronousSocketChannelImpl.read(AsynchronousSocketChannelImpl.java:297)
+	at com.mongodb.connection.AsynchronousSocketChannelStream.readAsync(AsynchronousSocketChannelStream.java:128)
+	at com.mongodb.connection.InternalStreamConnection.readAsync(InternalStreamConnection.java:484)
+```

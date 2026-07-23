@@ -1,0 +1,14 @@
+Adding permit later doesn’t unblock thread
+Thread A:
+1. Get semaphore.
+2. Set permit = 1.
+3. Acquire permit = 2. (Blocks)
+
+Thread B:
+1. Get semaphore.
+2. Acquire permit = 1. (may block for step `A.2`)
+3. Do stuff.
+4. Release permit = 1.
+5. Add permit = 1.
+
+I expected step `B.5` to unblock thread `A`, but that doesn’t happen.

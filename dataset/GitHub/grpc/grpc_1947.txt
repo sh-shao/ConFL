@@ -1,0 +1,2 @@
+ServerCallImpl's use of metadata in sendHeaders is thread-unsafe
+`ServerCallImpl` uses metadata to determine compression settings in [sendHeaders](https://github.com/grpc/grpc-java/blob/a2076f4/core/src/main/java/io/grpc/internal/ServerCallImpl.java#L111). However, that `Metadata` has already been passed to the application which is free to modify it. The `acceptEncodings` should just be saved as a field during the constructor instead.

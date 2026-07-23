@@ -1,0 +1,4 @@
+Lock TTL
+Any plan to add TTL to a Lock operation? Don't confuse with tryLock with TIME.
+
+I refer to a situation where a thread is dead and leave a resource locked (deadlock).

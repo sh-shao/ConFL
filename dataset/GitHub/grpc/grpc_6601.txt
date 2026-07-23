@@ -1,0 +1,54 @@
+Deadlock on start gRPC server
+### What version of gRPC-Java are you using?
+1.26.0
+### What is your environment?
+Linux, Alpine
+openjdk version "1.8.0_171"
+OpenJDK Runtime Environment (IcedTea 3.8.0) (Alpine 8.171.11-r0)
+OpenJDK 64-Bit Server VM (build 25.171-b11, mixed mode)
+Netty - 4.1.44.Final
+Vertx & Vertx-gRPC - 3.8.4
+### What did you expect to see?
+Proper start of gRPC Server
+### What did you see instead?
+Start sometimes hangs with deadlock
+### Steps to reproduce the bug
+[int_threaddump.txt](https://github.com/grpc/grpc-java/files/4058905/int_threaddump.txt)
+
+I suppose it's a race condition related to synchronization in gRPC (ServerImpl), await in NetServer.start and vertx/nettty event loops (probably single threaded). Probably it could happened at any time if someone start gRPC server and concurrently open new client connection to that server.
+In my case I stopped and started the gGPR server but I'm not sure if it is somehow related.
+
+### Analysis
+What I see in the thread dump is the following 2 threads that stays in that state, seems, forever:
+>
+"vert.x-eventloop-thread-0" #39 prio=10 os_prio=0 tid=0x000055711e379000 nid=0x2d waiting for monitor entry [0x00007fb72abc8000]
+java.lang.Thread.State: BLOCKED (on object monitor)
+  at io.grpc.internal.ServerImpl$ServerListenerImpl.transportCreated(ServerImpl.java:379)
+  \- waiting to lock <0x00000000c559f1a0> (a java.lang.Object)
+  at io.grpc.netty.NettyServer$1.initChannel(NettyServer.java:224)
+  \- locked <0x00000000c559bfd8> (a io.grpc.netty.NettyServer)
+  at io.netty.channel.ChannelInitializer.initChannel(ChannelInitializer.java:129)
+
+"vert.x-worker-thread-12" #214 prio=10 os_prio=0 tid=0x000055711f2d1800 nid=0x418 in Object.wait() [0x00007fb720656000]
+java.lang.Thread.State: WAITING (on object monitor)
+  at java.lang.Object.wait(Native Method)
+  at java.lang.Object.wait(Object.java:502)
+  at io.netty.util.concurrent.DefaultPromise.await(DefaultPromise.java:252)
+  \- locked <0x00000000c589baa0> (a io.netty.util.concurrent.PromiseTask)
+  at io.netty.util.concurrent.DefaultPromise.await(DefaultPromise.java:35)
+  at io.grpc.netty.NettyServer.start(NettyServer.java:269)
+  at io.grpc.internal.ServerImpl.start(ServerImpl.java:184)
+  \- locked <0x00000000c559f1a0> (a java.lang.Object)
+  at io.grpc.internal.ServerImpl.start(ServerImpl.java:90)
+>
+From what I see in these thread dumps and the code I think that this could be the problem (deadlock):
+1. Vertx grpc starts server (ServerImpl.start) in vertx blocking thread
+2. ServerImpl synchronize on lock and then try (keeping lock) to start server (NetServer.start)
+3. NetServer.start opens a channel, binds to it, and since that moment it, I assume, may receive connections from remote clients
+4. It seems, at this time a remote client opens connection to this server (already bound)
+5. Then in channel's event loop (probably single threaded) is received initChannel which try to get ServerImpl.lock in ServerListenerImpl.transportCreated (coudln't because got by ServerImpl.start)
+6. NetServer.start then schedules runnable in channel's event loop and blocks with channelzFuture.await() 
+7. Now, channelzFuture.await() waits for a runnable to be executed in channel's event loop (probably single threaded)
+8. At this point channelzFuture.await keeps ServerImpl.lock lock, while the ServerListenerImpl.transportCreated occupies/blocks (this is what I suppose) the single threaded channel's event loop thus making impossible to process further
+
+I'm attaching file with thread dumps of the whole JVM

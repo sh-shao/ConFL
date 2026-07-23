@@ -1,0 +1,25 @@
+Deadlock in metadata-store callback thread
+**Describe the bug**
+This is a deep digging of previous flaky test #12672.
+The previous fix are all work around by changing the namespace, reducing messages, setting retentions.
+As I can reproduce it locally repeatedly by running the whole test class, I found it's actually a dead lock issue.
+
+As the screenshot showed below, the backlogQuota checking procedure is running on the metadata-store thread ( the thread is in **a single thread executor**, owned by org.apache.pulsar.metadata.impl.AbstractMetadataStore#executor), and org.apache.pulsar.broker.resources.NamespaceResources#getPolicies is called to get the policy data. `NamespaceResources#getPolicies` is a blocking method and depends on metadata-store thread to executed to be finished.
+So the deadlock happens.
+
+**To Reproduce**
+1. checkout git-id ffccd46168f473514308903a6719fe01059ce92d
+2. Run test in class PersistentTopicsTest
+
+**Expected behavior**
+In metadata-store thread, we should avoid to get metadata in a blocking way.
+
+**Screenshots**
+![image](https://user-images.githubusercontent.com/2770146/141104649-59d70ac7-780d-4e49-9f7a-b2b3e4c1731a.png)
+
+
+**Desktop (please complete the following information):**
+ - OS: macOS
+
+**Additional context**
+nop.

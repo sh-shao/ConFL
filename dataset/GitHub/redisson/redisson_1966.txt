@@ -1,0 +1,24 @@
+Deadlock after Redis timeout
+### Expected behavior
+
+After a Redis response timeout, Redisson needs to be resilient and back to normal operation after Redis timeout and allow to lock and unlock critical sections again.
+
+### Actual behavior
+
+After a Redis response timeout **between attempts**, Redisson adds the lock to scheduled renew task and never remove them. So, the application enters on a deadlock due to a lock renewed even after unlock.
+The task can run on the same thread due to reentrant lock feature, but when the task runs on another thread a deadlock occurs.
+
+### Steps to reproduce or test case
+
+1. Start Redis
+2. Run the test application (https://github.com/hmagarotto/redissonlock) with a simple locked task.
+3. Force a timeout on Redis runnning a client pause command: "CLIENT PAUSE 5000"
+
+### Redis version
+4.0.10
+
+### Redisson version
+3.10.3
+
+### Redisson configuration
+Single server default

@@ -1,0 +1,72 @@
+Shared instance of HttpClient is not guaranteed to be executed in the same thread
+This does not behave as I expected where the callback of `HttpClient` called inside event loop is not guaranteed to be called back in the same event loop due to the connection from another event loop is reused in another event loop.
+
+```
+package io.vertx.test.core;
+
+import io.vertx.core.AbstractVerticle;
+import io.vertx.core.Future;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.http.HttpClient;
+import io.vertx.core.http.HttpClientRequest;
+import io.vertx.core.http.HttpServer;
+import org.junit.Test;
+
+import java.util.concurrent.CountDownLatch;
+
+public class HttpDeadlockTest extends HttpTestBase {
+
+    @Test
+    public void testDeadlock() throws Exception {
+        CountDownLatch latch = new CountDownLatch(4);
+        client = vertx.createHttpClient();
+        HttpClient localClient = vertx.createHttpClient();
+        vertx.deployVerticle(new TestVerticle(), x -> latch.countDown());
+        vertx.deployVerticle(new TestVerticle(), x -> latch.countDown());
+        vertx.deployVerticle(new TestVerticle(), x -> latch.countDown());
+        vertx.deployVerticle(new TestVerticle(), x -> latch.countDown());
+        latch.await();
+        CountDownLatch latch1 = new CountDownLatch(100);
+        for (int i = 0; i < 100; i++) {
+            localClient.getNow(19009, "localhost", "/", res -> {
+                latch1.countDown();
+                assertEquals(200, res.statusCode());
+            });
+        }
+        latch1.await();
+        localClient.close();
+    }
+
+    private class TestVerticle extends AbstractVerticle {
+
+        @Override
+        public void start(Future<Void> startFuture) throws Exception {
+            HttpServer httpServer = vertx.createHttpServer();
+            httpServer.requestHandler(x -> {
+                Thread serverThread = Thread.currentThread();
+                HttpClientRequest req = client.get(80, "load.s3.amazonaws.com", "/pixel.gif");
+                req.handler(res -> {
+                    Buffer buf = Buffer.buffer();
+                    res.endHandler(v -> {
+                        Thread clientThread = Thread.currentThread();
+                        if (clientThread != serverThread) {
+                            x.response().setStatusCode(500);
+                        } else {
+                            x.response().setStatusCode(200);
+                        }
+                        x.response().end();
+                    });
+                    res.handler(buf::appendBuffer);
+                });
+                req.end();
+            });
+            httpServer.listen(19009, x -> startFuture.complete());
+        }
+
+        @Override
+        public void stop(Future<Void> stopFuture) throws Exception {
+            super.stop(stopFuture);
+        }
+    }
+}
+```

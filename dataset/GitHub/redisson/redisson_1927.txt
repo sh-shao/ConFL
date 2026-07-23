@@ -1,0 +1,16 @@
+FSTCodec memory leak
+several puts (5-10) into a MapCache guarded with a Lock seems to accumulate the payloads in thread locals. The payload is large (several Mb) and the pod (dockered spring boot app with 700 Mb max) goes out of heap. The app running with redisson 3.7.5 has no such problems.
+
+redisson 3.10.2
+
+      config
+        .useMasterSlaveServers()
+        .setMasterAddress(redisHost)
+        .addSlaveAddress(redisSlave)
+        .setPassword(redisPassword)
+        .setTimeout(10000);
+
+redis 4.0.1 (master, slave)
+
+![mat-1](https://user-images.githubusercontent.com/37765839/53153947-d331f800-35b9-11e9-8903-e1e021632545.png)
+

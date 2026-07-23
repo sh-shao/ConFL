@@ -1,0 +1,119 @@
+ReadWriteLock downgrading not working as expected
+I am trying to implement a ReadWriteLock downgrade in Redisson, however after releasing the writeLock, redisson doesn't seems to be continue renewing the readlock in Redis.
+
+The simple example I am running:
+
+```java
+import java.util.concurrent.TimeUnit;
+
+import org.redisson.Redisson;
+import org.redisson.api.RReadWriteLock;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class ReadWriteLockExample {
+
+	private static final Logger logger = LoggerFactory.getLogger(ReadWriteLockExample.class);
+
+	public static void main(String[] args) {
+
+		Config config = new Config();
+		config.useSingleServer().setAddress("redis://127.0.0.1:6379");
+
+		RedissonClient redisson = Redisson.create(config);
+
+		RReadWriteLock rwlock = redisson.getReadWriteLock("myLock");
+
+		rwlock.writeLock().lock();
+		logger.info("Write lock acquired");
+		logger.info("Write lock count: " + rwlock.writeLock().getHoldCount());
+		logger.info("Read lock count: " + rwlock.readLock().getHoldCount());
+
+		rwlock.readLock().lock();
+		logger.info("Read lock acquired");
+		logger.info("Write lock count: " + rwlock.writeLock().getHoldCount());
+		logger.info("Read lock count: " + rwlock.readLock().getHoldCount());
+		
+		for (int i = 0; i < 6; i++) {
+			logger.info("Lock TTL: {} Write lock count {} Read lock count: {}", rwlock.readLock().remainTimeToLive(),
+					rwlock.writeLock().getHoldCount(), rwlock.readLock().getHoldCount());
+			try {
+				TimeUnit.SECONDS.sleep(5);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			}
+		}
+
+		// Lock downgrading
+		rwlock.writeLock().unlock();
+		logger.info("Write lock released/downgraded");
+		logger.info("Write lock count: " + rwlock.writeLock().getHoldCount());
+		logger.info("Read lock count: " + rwlock.readLock().getHoldCount());
+
+		// After 30 seconds, I would expect to see the readLock still locking
+		// However is gone
+		for (int i = 0; i < 6; i++) {
+			logger.info("Lock TTL: {} Write lock count {} Read lock count: {}", rwlock.readLock().remainTimeToLive(),
+					rwlock.writeLock().getHoldCount(), rwlock.readLock().getHoldCount());
+			try {
+				TimeUnit.SECONDS.sleep(5);
+			} catch (InterruptedException ie) {
+				Thread.currentThread().interrupt();
+			}
+		}
+
+		logger.info("Write lock count after 30s: " + rwlock.writeLock().getHoldCount());
+		logger.info("Read lock count after 30s: " + rwlock.readLock().getHoldCount());
+
+		// Releasing ReadLock
+		rwlock.readLock().unlock();
+		logger.info("Read lock released");
+		logger.info("Write lock count: " + rwlock.writeLock().getHoldCount());
+		logger.info("Read lock count: " + rwlock.readLock().getHoldCount());
+
+		redisson.shutdown();
+
+	}
+
+}
+
+```
+
+
+The output:
+```
+11:34:43.417 [main] INFO  org.redisson.Version - Redisson 3.16.8
+11:34:44.382 [redisson-netty-2-14] INFO  org.redisson.connection.pool.MasterPubSubConnectionPool - 1 connections initialized for 127.0.0.1/127.0.0.1:6379
+11:34:44.405 [redisson-netty-2-19] INFO  org.redisson.connection.pool.MasterConnectionPool - 24 connections initialized for 127.0.0.1/127.0.0.1:6379
+11:34:44.455 [main] INFO  com.test.redis.ReadWriteLockExample - Write lock acquired
+11:34:44.459 [main] INFO  com.test.redis.ReadWriteLockExample - Write lock count: 1
+11:34:44.461 [main] INFO  com.test.redis.ReadWriteLockExample - Read lock count: 0
+11:34:44.463 [main] INFO  com.test.redis.ReadWriteLockExample - Read lock acquired
+11:34:44.465 [main] INFO  com.test.redis.ReadWriteLockExample - Write lock count: 1
+11:34:44.466 [main] INFO  com.test.redis.ReadWriteLockExample - Read lock count: 1
+11:34:44.469 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 29997 Write lock count 1 Read lock count: 1
+11:34:49.484 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 24988 Write lock count 1 Read lock count: 1
+11:34:54.514 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 19961 Write lock count 1 Read lock count: 1
+11:34:59.541 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 25019 Write lock count 1 Read lock count: 1
+11:35:04.569 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 19996 Write lock count 1 Read lock count: 1
+11:35:09.582 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 25074 Write lock count 1 Read lock count: 1
+11:35:14.596 [main] INFO  com.test.redis.ReadWriteLockExample - Write lock released/downgraded
+11:35:14.599 [main] INFO  com.test.redis.ReadWriteLockExample - Write lock count: 0
+11:35:14.603 [main] INFO  com.test.redis.ReadWriteLockExample - Read lock count: 1
+11:35:14.615 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 20042 Write lock count 0 Read lock count: 1
+11:35:19.635 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 15021 Write lock count 0 Read lock count: 1
+11:35:24.647 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 10009 Write lock count 0 Read lock count: 1
+11:35:29.658 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: 4998 Write lock count 0 Read lock count: 1
+11:35:34.681 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: -2 Write lock count 0 Read lock count: 0
+11:35:39.709 [main] INFO  com.test.redis.ReadWriteLockExample - Lock TTL: -2 Write lock count 0 Read lock count: 0
+11:35:44.727 [main] INFO  com.test.redis.ReadWriteLockExample - Write lock count after 30s: 0
+11:35:44.731 [main] INFO  com.test.redis.ReadWriteLockExample - Read lock count after 30s: 0
+11:35:44.738 [main] INFO  com.test.redis.ReadWriteLockExample - Read lock released
+11:35:44.742 [main] INFO  com.test.redis.ReadWriteLockExample - Write lock count: 0
+11:35:44.745 [main] INFO  com.test.redis.ReadWriteLockExample - Read lock count: 0
+```
+
+I run this example on Redis server 6.2.5 on Ubuntu 20.04.3 LTS using WSL (Windows 10).
+I am new to Redisson and just wondering if this a bug or I am missing something.

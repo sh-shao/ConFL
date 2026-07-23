@@ -1,0 +1,63 @@
+Deadlock when closing Vertx and WorkerExecutor concurrently
+I met a deadlock issue recently on Vertx version 4.1.1 and after investigated and looked into the VertxImpl, CloseFuture, WorkerExecutorImpl, it looks like the deadlock happened in Vertx, please take a look:
+
+In my case, the deadlock issue is hit when the `vertx.close` and `workerExecutor.close` happened to be called at same time, one from main thread and another from eventloop thread. (the `workerExecutor` is created by the `vertx.createSharedWorkerExecutor`)
+
+Backtrace printed by jstack:
+```
+Found one Java-level deadlock:
+=============================
+"main":
+  waiting to lock monitor 0x00007fa958116580 (object 0x00000000b3329eb8, a io.vertx.core.impl.WorkerExecutorImpl),
+  which is held by "vert.x-eventloop-thread-0"
+"vert.x-eventloop-thread-0":
+  waiting to lock monitor 0x00007fa89c01ae80 (object 0x00000000b3329f58, a io.vertx.core.impl.VertxImpl),
+  which is held by "main"
+
+Java stack information for the threads listed above:
+===================================================
+"main":
+        at io.vertx.core.impl.WorkerExecutorImpl.close(WorkerExecutorImpl.java:90)
+        - waiting to lock <0x00000000b3329eb8> (a io.vertx.core.impl.WorkerExecutorImpl)
+        at io.vertx.core.impl.CloseFuture.close(CloseFuture.java:117)
+        at io.vertx.core.impl.VertxImpl.close(VertxImpl.java:578)
+        - locked <0x00000000b3329f58> (a io.vertx.core.impl.VertxImpl)
+        at io.vertx.reactivex.core.Vertx.close(Vertx.java:433)
+...
+"vert.x-eventloop-thread-0":
+        at io.vertx.core.impl.VertxImpl$SharedWorkerPool.close(VertxImpl.java:1080)
+        - waiting to lock <0x00000000b3329f58> (a io.vertx.core.impl.VertxImpl)
+        at io.vertx.core.impl.WorkerExecutorImpl.close(WorkerExecutorImpl.java:93)
+        - locked <0x00000000b3329eb8> (a io.vertx.core.impl.WorkerExecutorImpl)
+        at io.vertx.core.impl.WorkerExecutorImpl.close(WorkerExecutorImpl.java:78)
+        at io.vertx.core.impl.WorkerExecutorImpl.close(WorkerExecutorImpl.java:84)
+        at io.vertx.reactivex.core.WorkerExecutor.close(WorkerExecutor.java:207)
+        at io.vertx.reactivex.core.WorkerExecutor.close(WorkerExecutor.java:214)
+...
+
+Found 1 deadlock.
+```
+
+Checked vertx 4.1.1 code and find:
+When closing WorkerExecutor, it will do:
+1. Lock self (WorkerExecutorImpl)
+2. Remove self from CloseFuture
+3. Close SharedWorkerPool, which require lock Vertx
+
+When closing Vertx, it will do:
+1. Lock self (VertxImpl)
+2. Close CloseFuture, which synchronized copy the list of callbacks and invoke them outside of the synchronized block, one of the callback is to close the same WorkerExecutorImpl instance as above
+
+So, when the copy of callbacks in CloseFuture happened before removing the WorkerExecutorImpl from CloseFuture, it will still be called and cause deadlock
+
+Time | Main thread | Eventloop thread
+-- | -- | --
+T1 | Start close Vertx, locked VertxImpl instance |  
+T2 |   | Start close WorkerExecutor, locked WorkerExecutorImpl instance
+T3 | In CloseFuture, the list of callbacks are copied |  
+T4 |   | Remove WorkerExecutorImpl instance from CloseFuture. But since the callback is already copied in T3, this doesn't prevent the callback from being called
+T5 | The callback of close WorkerExecutorImpl instance is called. This require lock on the WorkerExecutorImpl instance, which was acquired by eventloop thread at T2. So it is waiting for the lock to be released by eventloop thread |  
+T6 |   | Close SharedWorkerPool, and this require lock on the VertxImpl instance, which was acquired by main thread at T1. So it is waiting for the lock to be released by main thread
+  | Deadlock | Deadlock
+
+The issue seems still exist in 4.1.2
