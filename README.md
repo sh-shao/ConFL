@@ -151,11 +151,32 @@ The dataset has 322 concurrency bugs from 8 projects:
 
 - the ground truth is in `ground-truth/github/`;
 - the bug reports are in `examples/reports/<project>/<case>.txt`;
-- the source snapshots are distributed separately, laid out as `<data>/<project>/<case>/`, e.g. `grpc/grpc_1253/`.
+- the buggy source code of every case is on Hugging Face (see below).
+
+### Download the source code
+
+Each case comes with a snapshot of its project's source at the buggy version. All snapshots are in one archive
+(5.7 GB) on Hugging Face: [Jedishao/confl-data](https://huggingface.co/datasets/Jedishao/confl-data).
+
+Download it and extract it into `data/`, inside `confl/`:
+
+```bash
+curl -L -o confl-data.zip https://huggingface.co/datasets/Jedishao/confl-data/resolve/main/confl-data.zip
+unzip -q confl-data.zip
+mv conFL-data data
+```
+
+Everything takes about 18 GB once extracted. To extract only some projects, name them:
+
+```bash
+unzip -q confl-data.zip 'conFL-data/grpc/*' 'conFL-data/druid/*'
+mv conFL-data data
+```
+
 
 ### Locally
 
-Put the snapshots in `data/` (or a link to them), then:
+With the snapshots in `data/`:
 
 ```bash
 python3 -m confl extract --dataset --jobs 4             # facts for every case, into output/facts/ (no LLM)
@@ -165,11 +186,11 @@ python3 -m confl evaluate --projects grpc --limit 10    # localize and score (co
 
 ### With Docker
 
-Mount the snapshots and an output directory:
+Mount `data/` and an output directory:
 
 ```bash
-docker run --rm -v /path/to/data:/opt/confl/data:ro -v "$PWD/output":/opt/confl/output confl extract --dataset
-docker run --rm -e OPENAI_API_KEY -v /path/to/data:/opt/confl/data:ro -v "$PWD/output":/opt/confl/output \
+docker run --rm -v "$PWD/data":/opt/confl/data:ro -v "$PWD/output":/opt/confl/output confl extract --dataset
+docker run --rm -e OPENAI_API_KEY -v "$PWD/data":/opt/confl/data:ro -v "$PWD/output":/opt/confl/output \
     confl evaluate --projects grpc --limit 10
 ```
 
@@ -201,14 +222,8 @@ by a few cases.
 
 Models and settings are configured in `configs/`; see [configs/README.md](configs/README.md).
 
-### Other parts of the repository
 
-- `tools/` holds diagnostics that need no LLM (`python3 -m tools.<name> --help`), e.g. `dsl_coverage` and
-  `export_dsl`.
-- [FactsExtractor/README.md](FactsExtractor/README.md) describes the fact schema.
-- Run the tests with `python3 -m unittest discover -s tests -t .` after building the extractor.
-
-### Limitations
+## Limitations
 
 - The DSL evidence is static and over-approximate. Interactions are *possible*, not proven races, and locks are
   recognized only where the accessing method holds them itself.
