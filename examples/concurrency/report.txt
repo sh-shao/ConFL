@@ -1,0 +1,6 @@
+Lost updates to Example.count when tasks run concurrently
+
+After calling Example.launch(executor) with a thread pool, the value returned by
+Example.read() is sometimes wrong: increments and decrements submitted as separate
+tasks appear to be lost. guarded() and blockGuarded() seem fine on their own, but
+the count still drifts when they run at the same time as the launched tasks.
