@@ -1,0 +1,37 @@
+{
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-6.1-sol",
+    "api_key_env": "OPENAI_API_KEY",
+    "base_url": "https://api.openai.com/v1",
+    "max_output_tokens": 16000,
+    "timeout_seconds": 300,
+    "pricing": {"input": 2.0, "cached_input": 0.1, "cache_write": 2.0, "output": 10.0}
+  },
+  "knowledge_base": {
+    "min_thread_entries": 1,
+    "client_api_entries": false,
+    "dsl_prior_weight": 8,
+    "exclude_components": ["common"],
+    "extra_entries": []
+  },
+  "extraction": {
+    "extractor_jar": "../FactsExtractor/target/ConFL-1.0-SNAPSHOT.jar",
+    "prefilter": "concurrency_modules",
+    "exclude_modules": [],
+    "java_options": [],
+    "jobs": 4
+  },
+  "localization": {
+    "top_k": 5
+  },
+  "dataset": {
+    "ground_truth": "../ground-truth/github/all.json",
+    "source_root": "../data",
+    "reports_dir": "../examples/reports",
+    "facts_root": "../output/facts",
+    "output": "../output/evaluation",
+    "projects": null,
+    "limit": null
+  }
+}
